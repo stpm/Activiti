@@ -95,18 +95,10 @@ public class BpmnDeployer implements Deployer {
     log.debug("Processing deployment {}", deployment.getName());
     
     AugmentedDeployment augmented = new AugmentedDeployment.Builder(deployment, deploymentSettings, bpmnParser).build();
-    
-    verifyNoProcessDefinitionsShareKeys(augmented.getAllProcessDefinitions());
-    
-    if (deployment.isNew()) {
 
-    } else {
-      
-    }
-
-    List<ProcessDefinitionEntity> processDefinitions = new ArrayList<ProcessDefinitionEntity>();
-    Map<String, org.activiti.bpmn.model.Process> processModels = new HashMap<String, org.activiti.bpmn.model.Process>();
-    Map<String, BpmnModel> bpmnModels = new HashMap<String, BpmnModel>();
+    List<ProcessDefinitionEntity> processDefinitions = augmented.getAllProcessDefinitions();
+    Map<String, org.activiti.bpmn.model.Process> processModels = augmented.getProcessModelsById();
+    Map<String, BpmnModel> bpmnModels = augmented.getBpmnModelsById();
     Map<String, ResourceEntity> resources = deployment.getResources();
 
     final ProcessEngineConfigurationImpl processEngineConfiguration = Context.getProcessEngineConfiguration();
@@ -114,39 +106,8 @@ public class BpmnDeployer implements Deployer {
 
       log.info("Processing resource {}", resourceName);
       if (isBpmnResource(resourceName)) {
-        ResourceEntity resource = resources.get(resourceName);
-        byte[] bytes = resource.getBytes();
-        ByteArrayInputStream inputStream = new ByteArrayInputStream(bytes);
-
-        BpmnParse bpmnParse = bpmnParser.createParse()
-            .sourceInputStream(inputStream)
-            .setSourceSystemId(resourceName)
-            .deployment(deployment)
-            .name(resourceName);
-
-
-        if (deploymentSettings != null) {
-
-          // Schema validation if needed
-          if (deploymentSettings.containsKey(DeploymentSettings.IS_BPMN20_XSD_VALIDATION_ENABLED)) {
-            bpmnParse.setValidateSchema((Boolean) deploymentSettings.get(DeploymentSettings.IS_BPMN20_XSD_VALIDATION_ENABLED));
-          }
-
-          // Process validation if needed
-          if (deploymentSettings.containsKey(DeploymentSettings.IS_PROCESS_VALIDATION_ENABLED)) {
-            bpmnParse.setValidateProcess((Boolean) deploymentSettings.get(DeploymentSettings.IS_PROCESS_VALIDATION_ENABLED));
-          }
-
-        } else {
-          // On redeploy, we assume it is validated at the first
-          // deploy
-          bpmnParse.setValidateSchema(false);
-          bpmnParse.setValidateProcess(false);
-        }
-
-        bpmnParse.execute();  // okay up to here
-
-        for (ProcessDefinitionEntity processDefinition : bpmnParse.getProcessDefinitions()) {
+        BpmnParse bpmnParse = augmented.bpmnParseForResourceName(resourceName);
+        for (ProcessDefinitionEntity processDefinition : augmented.processDefinitionsFromResource(resourceName)) {
           processDefinition.setResourceName(resourceName);
 
           // Backwards compatibility
@@ -178,10 +139,6 @@ public class BpmnDeployer implements Deployer {
           }
 
           processDefinition.setDiagramResourceName(diagramResourceName);
-          processDefinitions.add(processDefinition);
-
-          processModels.put(processDefinition.getKey(), bpmnParse.getBpmnModel().getProcessById(processDefinition.getKey()));
-          bpmnModels.put(processDefinition.getKey(), bpmnParse.getBpmnModel());
         }
       }
     }

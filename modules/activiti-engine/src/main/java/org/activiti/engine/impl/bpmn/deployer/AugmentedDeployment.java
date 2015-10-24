@@ -1,5 +1,7 @@
 package org.activiti.engine.impl.bpmn.deployer;
 
+import org.activiti.bpmn.model.BpmnModel;
+import org.activiti.bpmn.model.Process;
 import org.activiti.engine.impl.bpmn.parser.BpmnParse;
 import org.activiti.engine.impl.bpmn.parser.BpmnParser;
 import org.activiti.engine.impl.cmd.DeploymentSettings;
@@ -121,7 +123,41 @@ public class AugmentedDeployment {
   /**
    * @return
    */
-  public Iterable<ProcessDefinitionEntity> getAllProcessDefinitions() {
+  public List<ProcessDefinitionEntity> getAllProcessDefinitions() {
+    // TODO(stm): Auto-generated method stub
+    return null;
+  }
+
+  /**
+   * @return
+   */
+  public Map<String, Process> getProcessModelsById() {
+    // TODO(stm): Auto-generated method stub
+    return null;
+  }
+
+  /**
+   * @return
+   */
+  public Map<String, BpmnModel> getBpmnModelsById() {
+    // TODO(stm): Auto-generated method stub
+    return null;
+  }
+
+  /**
+   * @param resourceName
+   * @return
+   */
+  public Collection<ProcessDefinitionEntity> processDefinitionsFromResource(String resourceName) {
+    // TODO(stm): Auto-generated method stub
+    return null;
+  }
+
+  /**
+   * @param resourceName
+   * @return
+   */
+  public BpmnParse bpmnParseForResourceName(String resourceName) {
     // TODO(stm): Auto-generated method stub
     return null;
   }
