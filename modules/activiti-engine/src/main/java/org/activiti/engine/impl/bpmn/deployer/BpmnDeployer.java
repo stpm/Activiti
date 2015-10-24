@@ -93,6 +93,16 @@ public class BpmnDeployer implements Deployer {
 
   public void deploy(DeploymentEntity deployment, Map<String, Object> deploymentSettings) {
     log.debug("Processing deployment {}", deployment.getName());
+    
+    AugmentedDeployment augmented = new AugmentedDeployment.Builder(deployment, deploymentSettings, bpmnParser).build();
+    
+    verifyNoProcessDefinitionsShareKeys(augmented.getAllProcessDefinitions());
+    
+    if (deployment.isNew()) {
+
+    } else {
+      
+    }
 
     List<ProcessDefinitionEntity> processDefinitions = new ArrayList<ProcessDefinitionEntity>();
     Map<String, org.activiti.bpmn.model.Process> processModels = new HashMap<String, org.activiti.bpmn.model.Process>();
@@ -114,6 +124,7 @@ public class BpmnDeployer implements Deployer {
             .deployment(deployment)
             .name(resourceName);
 
+
         if (deploymentSettings != null) {
 
           // Schema validation if needed
@@ -133,7 +144,7 @@ public class BpmnDeployer implements Deployer {
           bpmnParse.setValidateProcess(false);
         }
 
-        bpmnParse.execute();
+        bpmnParse.execute();  // okay up to here
 
         for (ProcessDefinitionEntity processDefinition : bpmnParse.getProcessDefinitions()) {
           processDefinition.setResourceName(resourceName);
@@ -270,6 +281,15 @@ public class BpmnDeployer implements Deployer {
     }
   }
   
+  /**
+   * @param allProcessDefinitions
+   */
+  private void verifyNoProcessDefinitionsShareKeys(
+      Iterable<ProcessDefinitionEntity> allProcessDefinitions) {
+    // TODO(stm): Auto-generated method stub
+    
+  }
+
   protected void addDefinitionInfoToCache(ProcessDefinitionEntity processDefinition, 
       ProcessEngineConfigurationImpl processEngineConfiguration, CommandContext commandContext) {
     
