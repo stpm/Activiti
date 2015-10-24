@@ -97,8 +97,8 @@ public class BpmnDeployer implements Deployer {
     AugmentedDeployment augmented = new AugmentedDeployment.Builder(deployment, deploymentSettings, bpmnParser).build();
 
     List<ProcessDefinitionEntity> processDefinitions = augmented.getAllProcessDefinitions();
-    Map<String, org.activiti.bpmn.model.Process> processModels = augmented.getProcessModelsById();
-    Map<String, BpmnModel> bpmnModels = augmented.getBpmnModelsById();
+    Map<String, org.activiti.bpmn.model.Process> processModels = augmented.getProcessModelsByKey();
+    Map<String, BpmnModel> bpmnModels = augmented.getBpmnModelsByKey();
     Map<String, ResourceEntity> resources = deployment.getResources();
 
     final ProcessEngineConfigurationImpl processEngineConfiguration = Context.getProcessEngineConfiguration();

@@ -16,6 +16,7 @@ import java.io.ByteArrayInputStream;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -118,48 +119,75 @@ public class AugmentedDeployment {
       this.definitions = 
           Collections.unmodifiableList(alreadyExecutedParse.getProcessDefinitions());
     }
+    
+    public Collection<ProcessDefinitionEntity> getAllProcessDefinitions() {
+      return definitions;
+    }
+    
+    public BpmnParse getBpmnParse() {
+      return alreadyExecutedParse;
+    }
+    
+    public String getResourceName() {
+      return resourceName;
+    }
   }
 
-  /**
-   * @return
-   */
   public List<ProcessDefinitionEntity> getAllProcessDefinitions() {
-    // TODO(stm): Auto-generated method stub
-    return null;
+    List<ProcessDefinitionEntity> result = new ArrayList<ProcessDefinitionEntity>();
+    
+    for (AugmentedBpmnParse augmentedParse : parses) {
+      result.addAll(augmentedParse.getAllProcessDefinitions());
+    }
+    
+    return result;
   }
 
-  /**
-   * @return
-   */
-  public Map<String, Process> getProcessModelsById() {
-    // TODO(stm): Auto-generated method stub
-    return null;
+  public Map<String, Process> getProcessModelsByKey() {
+    Map<String, Process> result = new LinkedHashMap<String, Process>();
+    for (AugmentedBpmnParse augmentedParse : parses) {
+      BpmnParse unaugmentedParse = augmentedParse.getBpmnParse();
+      
+      for (ProcessDefinitionEntity definition : augmentedParse.getAllProcessDefinitions()) {
+        String key = definition.getKey();
+        Process model = unaugmentedParse.getBpmnModel().getProcessById(key);
+        
+        result.put(key, model);
+      }
+    }   
+    return result;
   }
 
-  /**
-   * @return
-   */
-  public Map<String, BpmnModel> getBpmnModelsById() {
-    // TODO(stm): Auto-generated method stub
-    return null;
+  public Map<String, BpmnModel> getBpmnModelsByKey() {
+    Map<String, BpmnModel> result = new LinkedHashMap<String, BpmnModel>();
+    for (AugmentedBpmnParse augmentedParse : parses) {
+      BpmnParse unaugmentedParse = augmentedParse.getBpmnParse();
+      BpmnModel bpmnModel = unaugmentedParse.getBpmnModel();
+      
+      for (ProcessDefinitionEntity entity : augmentedParse.getAllProcessDefinitions()) {
+        result.put(entity.getKey(), bpmnModel);
+      }
+    }
+    
+    return result;
   }
 
-  /**
-   * @param resourceName
-   * @return
-   */
+  protected AugmentedBpmnParse getAugmentedParseByResourceName(String resourceName) {
+    // TODO(stm): make this much more efficient.
+    for (AugmentedBpmnParse augmentedParse : parses) {
+      if (augmentedParse.getResourceName().equals(resourceName)) {
+        return augmentedParse;
+      }
+    }
+    return null;
+  }
+  
   public Collection<ProcessDefinitionEntity> processDefinitionsFromResource(String resourceName) {
-    // TODO(stm): Auto-generated method stub
-    return null;
+    return getAugmentedParseByResourceName(resourceName).getAllProcessDefinitions();
   }
 
-  /**
-   * @param resourceName
-   * @return
-   */
   public BpmnParse bpmnParseForResourceName(String resourceName) {
-    // TODO(stm): Auto-generated method stub
-    return null;
+    return getAugmentedParseByResourceName(resourceName).getBpmnParse();
   }
 }
 
