@@ -49,9 +49,17 @@ public class ExpandedDeploymentTest extends PluggableActivitiTestCase {
       "<process id='" + EN2_ID + "' name='Expense Note 2' />");
   private static final String EN_XML_NAME = "en." + BpmnDeployer.BPMN_RESOURCE_SUFFIXES[1];
       
-  public void testCreateAndQuery() {
+  @Override
+  public void setUp() {
     Context.setCommandContext(processEngineConfiguration.getCommandContextFactory().createCommandContext(null));
-    
+  }
+  
+  @Override
+  public void tearDown() {
+    Context.removeCommandContext();
+  }
+  
+  public void testCreateAndQuery() {
     DeploymentEntity entity = assembleUnpersistedDeploymentEntity();
 
     ExpandedDeployment.BuilderFactory builderFactory = processEngineConfiguration.getExpandedDeploymentBuilderFactory();
