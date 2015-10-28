@@ -12,16 +12,8 @@
  */
 package org.activiti.engine.impl.bpmn.deployer;
 
-import java.io.ByteArrayInputStream;
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.HashMap;
-import java.util.Iterator;
-import java.util.LinkedHashMap;
-import java.util.LinkedHashSet;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 
 import org.activiti.bpmn.model.BpmnModel;
 import org.activiti.bpmn.model.EventDefinition;
@@ -43,7 +35,6 @@ import org.activiti.engine.impl.bpmn.parser.BpmnParser;
 import org.activiti.engine.impl.cfg.IdGenerator;
 import org.activiti.engine.impl.cfg.ProcessEngineConfigurationImpl;
 import org.activiti.engine.impl.cmd.CancelJobsCmd;
-import org.activiti.engine.impl.cmd.DeploymentSettings;
 import org.activiti.engine.impl.context.Context;
 import org.activiti.engine.impl.el.ExpressionManager;
 import org.activiti.engine.impl.event.MessageEventHandler;
@@ -77,8 +68,13 @@ import org.apache.commons.collections.CollectionUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.node.ObjectNode;
+import java.util.ArrayList;
+import java.util.Iterator;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
 /**
  * @author Joram Barrez
@@ -319,10 +315,10 @@ public class BpmnDeployer implements Deployer {
       
       ProcessDefinitionEntity previousProcessDefinition = mapNewToOldProcessDefinitions.get(processDefinition);
       
-      removeObsoleteMessageEventSubscriptions(processDefinition, previousProcessDefinition);
+      removeObsoleteMessageEventSubscriptions(previousProcessDefinition);
       addMessageEventSubscriptions(processDefinition, process, bpmnModel);
 
-      removeObsoleteSignalEventSubScription(processDefinition, previousProcessDefinition);
+      removeObsoleteSignalEventSubScription(previousProcessDefinition);
       addSignalEventSubscriptions(commandContext, processDefinition, process, bpmnModel);
       
       removeObsoleteTimers(processDefinition);
@@ -484,14 +480,14 @@ public class BpmnDeployer implements Deployer {
     }
   }
 
-  protected void removeObsoleteMessageEventSubscriptions(ProcessDefinitionEntity processDefinition, ProcessDefinitionEntity latestProcessDefinition) {
+  protected void removeObsoleteMessageEventSubscriptions(ProcessDefinitionEntity previousProcessDefinition) {
     // remove all subscriptions for the previous version
-    if (latestProcessDefinition != null) {
+    if (previousProcessDefinition != null) {
       CommandContext commandContext = Context.getCommandContext();
 
       EventSubscriptionEntityManager eventSubscriptionEntityManager = commandContext.getEventSubscriptionEntityManager();
       List<EventSubscriptionEntity> subscriptionsToDelete = eventSubscriptionEntityManager.findEventSubscriptionsByConfiguration(MessageEventHandler.EVENT_HANDLER_TYPE,
-          latestProcessDefinition.getId(), latestProcessDefinition.getTenantId());
+          previousProcessDefinition.getId(), previousProcessDefinition.getTenantId());
 
       for (EventSubscriptionEntity eventSubscriptionEntity : subscriptionsToDelete) {
         eventSubscriptionEntityManager.delete(eventSubscriptionEntity);
@@ -552,14 +548,14 @@ public class BpmnDeployer implements Deployer {
     commandContext.getEventSubscriptionEntityManager().insert(newSubscription);
   }
 
-  protected void removeObsoleteSignalEventSubScription(ProcessDefinitionEntity processDefinition, ProcessDefinitionEntity latestProcessDefinition) {
+  protected void removeObsoleteSignalEventSubScription(ProcessDefinitionEntity previousProcessDefinition) {
     // remove all subscriptions for the previous version
-    if (latestProcessDefinition != null) {
+    if (previousProcessDefinition != null) {
       CommandContext commandContext = Context.getCommandContext();
 
       EventSubscriptionEntityManager eventSubscriptionEntityManager = commandContext.getEventSubscriptionEntityManager();
       List<EventSubscriptionEntity> subscriptionsToDelete = eventSubscriptionEntityManager.findEventSubscriptionsByConfiguration(SignalEventHandler.EVENT_HANDLER_TYPE,
-          latestProcessDefinition.getId(), latestProcessDefinition.getTenantId());
+          previousProcessDefinition.getId(), previousProcessDefinition.getTenantId());
 
       for (EventSubscriptionEntity eventSubscriptionEntity : subscriptionsToDelete) {
         eventSubscriptionEntityManager.delete(eventSubscriptionEntity);
@@ -606,6 +602,7 @@ public class BpmnDeployer implements Deployer {
     if (exprSet != null) {
       Iterator<Expression> iterator = exprSet.iterator();
       while (iterator.hasNext()) {
+        @SuppressWarnings("cast")
         Expression expr = (Expression) iterator.next();
         IdentityLinkEntity identityLink = commandContext.getIdentityLinkEntityManager().create();
         identityLink.setProcessDef(processDefinition);

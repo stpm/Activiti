@@ -11,7 +11,6 @@ import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
 import java.util.Collection;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -28,6 +27,36 @@ public class AugmentedDeployment {
       Collection<AugmentedBpmnParse> parses) {
     this.entity = entity;
     this.parses = parses;
+  }
+  
+  public DeploymentEntity getDeployment() {
+    return entity;
+  }
+
+  public List<ProcessDefinitionEntity> getAllProcessDefinitions() {
+    List<ProcessDefinitionEntity> result = new ArrayList<ProcessDefinitionEntity>();
+    
+    for (AugmentedBpmnParse augmentedParse : parses) {
+      result.addAll(augmentedParse.getAllProcessDefinitions());
+    }
+    
+    return result;
+  }
+
+  protected BpmnModel getBpmnModelForProcessDefinition(ProcessDefinitionEntity processDefinition) {
+    return null;
+  }
+  
+  protected BpmnParse bpmnParseForProcessDefinition(ProcessDefinitionEntity entity) {
+    return null;
+  }
+  
+  protected Process getProcessModelForProcessDefinition(ProcessDefinitionEntity processDefinition) {
+    return null;
+  }
+  
+  protected Collection<AugmentedBpmnParse> getAugmentedParses() {
+    return parses;
   }
   
   public static class Builder {
@@ -61,7 +90,7 @@ public class AugmentedDeployment {
     }
   }
     
-  public static boolean isBpmnResource(String resourceName) {
+  private static boolean isBpmnResource(String resourceName) {
     for (String suffix : BpmnDeployer.BPMN_RESOURCE_SUFFIXES) {
       if (resourceName.endsWith(suffix)) {
         return true;
@@ -70,82 +99,53 @@ public class AugmentedDeployment {
      
     return false;
   }
-  
-  public DeploymentEntity getDeployment() {
-    return entity;
-  }
-
-  public List<ProcessDefinitionEntity> getAllProcessDefinitions() {
-    List<ProcessDefinitionEntity> result = new ArrayList<ProcessDefinitionEntity>();
-    
-    for (AugmentedBpmnParse augmentedParse : parses) {
-      result.addAll(augmentedParse.getAllProcessDefinitions());
-    }
-    
-    return result;
-  }
-
-  public Map<String, Process> getProcessModelsByKey() {
-    Map<String, Process> result = new LinkedHashMap<String, Process>();
-    for (AugmentedBpmnParse augmentedParse : parses) {
-      BpmnParse unaugmentedParse = augmentedParse.getBpmnParse();
-      
-      for (ProcessDefinitionEntity definition : augmentedParse.getAllProcessDefinitions()) {
-        String key = definition.getKey();
-        Process model = unaugmentedParse.getBpmnModel().getProcessById(key);
-        
-        result.put(key, model);
-      }
-    }   
-    return result;
-  }
-
-  protected BpmnModel getBpmnModelForProcessDefinition(ProcessDefinitionEntity processDefinition) {
-    return null;
-  }
-  
-  protected Process getProcessModelForProcessDefinition(ProcessDefinitionEntity processDefinition) {
-    return null;
-  }
-  
-  public Map<String, BpmnModel> getBpmnModelsByKey() {
-    Map<String, BpmnModel> result = new LinkedHashMap<String, BpmnModel>();
-    for (AugmentedBpmnParse augmentedParse : parses) {
-      BpmnParse unaugmentedParse = augmentedParse.getBpmnParse();
-      BpmnModel bpmnModel = unaugmentedParse.getBpmnModel();
-      
-      for (ProcessDefinitionEntity entity : augmentedParse.getAllProcessDefinitions()) {
-        result.put(entity.getKey(), bpmnModel);
-      }
-    }
-    
-    return result;
-  }
-  
-  protected Collection<AugmentedBpmnParse> getAugmentedParses() {
-    return parses;
-  }
-
-  protected AugmentedBpmnParse getAugmentedParseByResourceName(String resourceName) {
-    // TODO(stm): make this much more efficient.
-    for (AugmentedBpmnParse augmentedParse : parses) {
-      if (augmentedParse.getResourceName().equals(resourceName)) {
-        return augmentedParse;
-      }
-    }
-    return null;
-  }
-  
-  public Collection<ProcessDefinitionEntity> processDefinitionsFromResource(String resourceName) {
-    return getAugmentedParseByResourceName(resourceName).getAllProcessDefinitions();
-  }
-
-  public BpmnParse bpmnParseForResourceName(String resourceName) {
-    return getAugmentedParseByResourceName(resourceName).getBpmnParse();
-  }
-  
-  public BpmnParse bpmnParseForProcessDefinition(ProcessDefinitionEntity entity) {
-    return null;
-  }
 }
+
+//  public Map<String, Process> getProcessModelsByKey() {
+//    Map<String, Process> result = new LinkedHashMap<String, Process>();
+//    for (AugmentedBpmnParse augmentedParse : parses) {
+//      BpmnParse unaugmentedParse = augmentedParse.getBpmnParse();
+//      
+//      for (ProcessDefinitionEntity definition : augmentedParse.getAllProcessDefinitions()) {
+//        String key = definition.getKey();
+//        Process model = unaugmentedParse.getBpmnModel().getProcessById(key);
+//        
+//        result.put(key, model);
+//      }
+//    }   
+//    return result;
+//  }
+
+//  public Map<String, BpmnModel> getBpmnModelsByKey() {
+//    Map<String, BpmnModel> result = new LinkedHashMap<String, BpmnModel>();
+//    for (AugmentedBpmnParse augmentedParse : parses) {
+//      BpmnParse unaugmentedParse = augmentedParse.getBpmnParse();
+//      BpmnModel bpmnModel = unaugmentedParse.getBpmnModel();
+//      
+//      for (ProcessDefinitionEntity entity : augmentedParse.getAllProcessDefinitions()) {
+//        result.put(entity.getKey(), bpmnModel);
+//      }
+//    }
+//    
+//    return result;
+//  }
+  
+
+//  protected AugmentedBpmnParse getAugmentedParseByResourceName(String resourceName) {
+//    // TODO(stm): make this much more efficient.
+//    for (AugmentedBpmnParse augmentedParse : parses) {
+//      if (augmentedParse.getResourceName().equals(resourceName)) {
+//        return augmentedParse;
+//      }
+//    }
+//    return null;
+//  }
+  
+//  public Collection<ProcessDefinitionEntity> processDefinitionsFromResource(String resourceName) {
+//    return getAugmentedParseByResourceName(resourceName).getAllProcessDefinitions();
+//  }
+
+//  public BpmnParse bpmnParseForResourceName(String resourceName) {
+//    return getAugmentedParseByResourceName(resourceName).getBpmnParse();
+//  }
 
