@@ -14,8 +14,11 @@ package org.activiti.engine.impl.bpmn.deployer;
 
 import java.io.ByteArrayInputStream;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.HashMap;
 import java.util.Iterator;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -49,6 +52,7 @@ import org.activiti.engine.impl.interceptor.CommandContext;
 import org.activiti.engine.impl.jobexecutor.TimerEventHandler;
 import org.activiti.engine.impl.jobexecutor.TimerStartEventJobHandler;
 import org.activiti.engine.impl.persistence.deploy.Deployer;
+import org.activiti.engine.impl.persistence.deploy.DeploymentCache;
 import org.activiti.engine.impl.persistence.deploy.DeploymentManager;
 import org.activiti.engine.impl.persistence.deploy.ProcessDefinitionCacheEntry;
 import org.activiti.engine.impl.persistence.deploy.ProcessDefinitionInfoCacheObject;
@@ -91,160 +95,297 @@ public class BpmnDeployer implements Deployer {
   protected BpmnParser bpmnParser;
   protected IdGenerator idGenerator;
 
+  @Override
   public void deploy(DeploymentEntity deployment, Map<String, Object> deploymentSettings) {
     log.debug("Processing deployment {}", deployment.getName());
+
+    AugmentedBpmnParse.Builder parseBuilder = new AugmentedBpmnParse.Builder(deployment, bpmnParser, deploymentSettings);
+    AugmentedDeployment augmentedDeployment = new AugmentedDeployment.Builder(deployment, parseBuilder).build();
     
-    AugmentedDeployment augmented = new AugmentedDeployment.Builder(deployment, deploymentSettings, bpmnParser).build();
+    verifyNoProcessDefinitionsShareKeys(augmentedDeployment.getAllProcessDefinitions());
 
-    List<ProcessDefinitionEntity> processDefinitions = augmented.getAllProcessDefinitions();
-    Map<String, org.activiti.bpmn.model.Process> processModels = augmented.getProcessModelsByKey();
-    Map<String, BpmnModel> bpmnModels = augmented.getBpmnModelsByKey();
-    Map<String, ResourceEntity> resources = deployment.getResources();
+    makeProcessDefinitionsTakeValuesFromDeployment(augmentedDeployment);
+    setResourceNamesOnProcessDefinitions(augmentedDeployment);
+    
+    createAndPersistNewDiagramsAsNeeded(augmentedDeployment);
+    setProcessDefinitionDiagramNames(augmentedDeployment);
+    
+    if (deployment.isNew()) {
+      Map<ProcessDefinitionEntity, ProcessDefinitionEntity> mapOfNewProcessDefinitionToPreviousVersion =
+          getPreviousVersionsOfProcessDefinitions(augmentedDeployment);
+      setProcessDefinitionVersionsAndIds(mapOfNewProcessDefinitionToPreviousVersion, augmentedDeployment);
+      persistProcessDefinitions(augmentedDeployment);
 
+      updateTimersAndEvents(augmentedDeployment, mapOfNewProcessDefinitionToPreviousVersion);
+    } else {
+      makeProcessDefinitionsConsistentWithPersistedVersions(augmentedDeployment);
+    }
+    
+    updateCachingAndArtifacts(augmentedDeployment);
+  }
+
+  /**
+   * Updates all the process definition entities to match the deployment's values for tenant,
+   * engine version, and deployment id.
+   */
+  protected void makeProcessDefinitionsTakeValuesFromDeployment(AugmentedDeployment augmentedDeployment) {
+    DeploymentEntity deployment = augmentedDeployment.getDeployment();
+    String engineVersion = deployment.getEngineVersion();
+    String tenantId = deployment.getTenantId();
+    String deploymentId = deployment.getId();
+    
+    for (ProcessDefinitionEntity processDefinition : augmentedDeployment.getAllProcessDefinitions()) {
+      // Backwards compatibility
+      if (engineVersion != null) {
+        processDefinition.setEngineVersion(engineVersion);
+      }
+
+      if (tenantId != null) {
+        processDefinition.setTenantId(tenantId); // process definition inherits the tenant id
+      }
+      
+      processDefinition.setDeploymentId(deploymentId);
+    }
+  }
+
+  /**
+   * Updates all the process definition entities to have the correct resource names.
+   */
+  protected void setResourceNamesOnProcessDefinitions(AugmentedDeployment augmentedDeployment) {
+    for (AugmentedBpmnParse parse : augmentedDeployment.getAugmentedParses()) {
+      String resourceName = parse.getResourceName();
+      for (ProcessDefinitionEntity processDefinition : parse.getAllProcessDefinitions()) {
+        processDefinition.setResourceName(resourceName);
+      }
+    }
+  }
+
+  /**
+   * Creates new diagrams for process definitions if the deployment is new, the process definition in
+   * question supports it, and the engine is configured to make new diagrams.  When this method
+   * creates a new diagram, it also persists it via the ResourceEntityManager and adds it to the
+   * resources of the deployment.
+   */
+  protected void createAndPersistNewDiagramsAsNeeded(AugmentedDeployment augmentedDeployment) {
     final ProcessEngineConfigurationImpl processEngineConfiguration = Context.getProcessEngineConfiguration();
-    for (String resourceName : resources.keySet()) {
+    DeploymentEntity deployment = augmentedDeployment.getDeployment();
+    
+    if (augmentedDeployment.getDeployment().isNew() && processEngineConfiguration.isCreateDiagramOnDeploy()) {
+      ResourceEntityManager resourceEntityManager = processEngineConfiguration.getResourceEntityManager();
+      
+      for (ProcessDefinitionEntity processDefinition : augmentedDeployment.getAllProcessDefinitions()) {
+        if (processDefinition.isGraphicalNotationDefined()) {
+          String resourceName = processDefinition.getResourceName();
+          String diagramResourceName = getDiagramResourceForProcess(
+              resourceName, // was already set up in setResourceNamesOnProcessDefinitions called from deploy 
+              processDefinition.getKey(), 
+              augmentedDeployment.getDeployment().getResources());
+          if (diagramResourceName == null) { // didn't find anything
+            BpmnParse bpmnParse = augmentedDeployment.bpmnParseForProcessDefinition(processDefinition);
+            try {
+              byte[] diagramBytes = IoUtil.readInputStream(
+                  processEngineConfiguration.getProcessDiagramGenerator().generateDiagram(bpmnParse.getBpmnModel(), "png", processEngineConfiguration.getActivityFontName(),
+                      processEngineConfiguration.getLabelFontName(), processEngineConfiguration.getClassLoader()), null);
+              diagramResourceName = getProcessImageResourceName(resourceName, processDefinition.getKey(), "png");
+              
+              ResourceEntity resource = resourceEntityManager.create();
+              resource.setName(diagramResourceName);
+              resource.setBytes(diagramBytes);
+              resource.setDeploymentId(deployment.getId());
 
-      log.info("Processing resource {}", resourceName);
-      if (isBpmnResource(resourceName)) {
-        BpmnParse bpmnParse = augmented.bpmnParseForResourceName(resourceName);
-        for (ProcessDefinitionEntity processDefinition : augmented.processDefinitionsFromResource(resourceName)) {
-          processDefinition.setResourceName(resourceName);
+              // Mark the resource as 'generated'
+              resource.setGenerated(true);
 
-          // Backwards compatibility
-          if (deployment.getEngineVersion() != null) {
-            processDefinition.setEngineVersion(deployment.getEngineVersion());
-          }
-
-          if (deployment.getTenantId() != null) {
-            processDefinition.setTenantId(deployment.getTenantId()); // process definition inherits the tenant id
-          }
-
-          String diagramResourceName = getDiagramResourceForProcess(resourceName, processDefinition.getKey(), resources);
-
-          // Only generate the resource when deployment is new to prevent modification of deployment resources
-          // after the process-definition is actually deployed. Also to prevent resource-generation failure every
-          // time the process definition is added to the deployment-cache when diagram-generation has failed the first time.
-          if (deployment.isNew()) {
-            if (processEngineConfiguration.isCreateDiagramOnDeploy() && diagramResourceName == null && processDefinition.isGraphicalNotationDefined()) {
-              try {
-                byte[] diagramBytes = IoUtil.readInputStream(
-                    processEngineConfiguration.getProcessDiagramGenerator().generateDiagram(bpmnParse.getBpmnModel(), "png", processEngineConfiguration.getActivityFontName(),
-                        processEngineConfiguration.getLabelFontName(), processEngineConfiguration.getClassLoader()), null);
-                diagramResourceName = getProcessImageResourceName(resourceName, processDefinition.getKey(), "png");
-                createResource(processEngineConfiguration.getResourceEntityManager(), diagramResourceName, diagramBytes, deployment);
-              } catch (Throwable t) { // if anything goes wrong, we don't store the image (the process will still be executable).
-                log.warn("Error while generating process diagram, image will not be stored in repository", t);
-              }
+              resourceEntityManager.insert(resource, false);
+              
+              deployment.addResource(resource);  // now we'll find it when we look for the diagram name.
+            } catch (Throwable t) { // if anything goes wrong, we don't store the image (the process will still be executable).
+              log.warn("Error while generating process diagram, image will not be stored in repository", t);
             }
           }
-
-          processDefinition.setDiagramResourceName(diagramResourceName);
         }
       }
-    }
-
-    // check if there are process definitions with the same process key to
-    // prevent database unique index violation
-    List<String> keyList = new ArrayList<String>();
-    for (ProcessDefinitionEntity processDefinition : processDefinitions) {
-      if (keyList.contains(processDefinition.getKey())) {
-        throw new ActivitiException("The deployment contains process definitions with the same key (process id attribute), this is not allowed");
-      }
-      keyList.add(processDefinition.getKey());
-    }
-
-    CommandContext commandContext = Context.getCommandContext();
-    ProcessDefinitionEntityManager processDefinitionManager = commandContext.getProcessDefinitionEntityManager();
-    for (ProcessDefinitionEntity processDefinition : processDefinitions) {
-      List<TimerEntity> timers = new ArrayList<TimerEntity>();
-      if (deployment.isNew()) {
-        int processDefinitionVersion;
-
-        ProcessDefinitionEntity latestProcessDefinition = null;
-        if (processDefinition.getTenantId() != null && !ProcessEngineConfiguration.NO_TENANT_ID.equals(processDefinition.getTenantId())) {
-          latestProcessDefinition = processDefinitionManager.findLatestProcessDefinitionByKeyAndTenantId(processDefinition.getKey(), processDefinition.getTenantId());
-        } else {
-          latestProcessDefinition = processDefinitionManager.findLatestProcessDefinitionByKey(processDefinition.getKey());
-        }
-
-        if (latestProcessDefinition != null) {
-          processDefinitionVersion = latestProcessDefinition.getVersion() + 1;
-        } else {
-          processDefinitionVersion = 1;
-        }
-
-        processDefinition.setVersion(processDefinitionVersion);
-        processDefinition.setDeploymentId(deployment.getId());
-
-        String nextId = idGenerator.getNextId();
-        String processDefinitionId = processDefinition.getKey() + ":" + processDefinition.getVersion() + ":" + nextId; // ACT-505
-
-        // ACT-115: maximum id length is 64 characters
-        if (processDefinitionId.length() > 64) {
-          processDefinitionId = nextId;
-        }
-        processDefinition.setId(processDefinitionId);
-
-        if (commandContext.getProcessEngineConfiguration().getEventDispatcher().isEnabled()) {
-          commandContext.getProcessEngineConfiguration().getEventDispatcher().dispatchEvent(ActivitiEventBuilder.createEntityEvent(ActivitiEventType.ENTITY_CREATED, processDefinition));
-        }
-
-        org.activiti.bpmn.model.Process process = processModels.get(processDefinition.getKey());
-
-        removeObsoleteTimers(processDefinition);
-        addTimerDeclarations(processDefinition, process, timers);
-
-        removeObsoleteMessageEventSubscriptions(processDefinition, latestProcessDefinition);
-        addMessageEventSubscriptions(processDefinition, process, bpmnModels.get(processDefinition.getKey()));
-
-        removeObsoleteSignalEventSubScription(processDefinition, latestProcessDefinition);
-        addSignalEventSubscriptions(commandContext, processDefinition, process, bpmnModels.get(processDefinition.getKey()));
-
-        commandContext.getProcessDefinitionEntityManager().insert(processDefinition, false);
-        addAuthorizationsFromIterator(commandContext, processDefinition.getCandidateStarterUserIdExpressions(), processDefinition, ExprType.USER);
-        addAuthorizationsFromIterator(commandContext, processDefinition.getCandidateStarterGroupIdExpressions(), processDefinition, ExprType.GROUP);
-
-        if (commandContext.getProcessEngineConfiguration().getEventDispatcher().isEnabled()) {
-          commandContext.getProcessEngineConfiguration().getEventDispatcher().dispatchEvent(ActivitiEventBuilder.createEntityEvent(ActivitiEventType.ENTITY_INITIALIZED, processDefinition));
-        }
-
-        scheduleTimers(timers);
-
-      } else {
-        String deploymentId = deployment.getId();
-        processDefinition.setDeploymentId(deploymentId);
-
-        ProcessDefinitionEntity persistedProcessDefinition = null;
-        if (processDefinition.getTenantId() == null || ProcessEngineConfiguration.NO_TENANT_ID.equals(processDefinition.getTenantId())) {
-          persistedProcessDefinition = processDefinitionManager.findProcessDefinitionByDeploymentAndKey(deploymentId, processDefinition.getKey());
-        } else {
-          persistedProcessDefinition = processDefinitionManager.findProcessDefinitionByDeploymentAndKeyAndTenantId(deploymentId, processDefinition.getKey(), processDefinition.getTenantId());
-        }
-
-        if (persistedProcessDefinition != null) {
-          processDefinition.setId(persistedProcessDefinition.getId());
-          processDefinition.setVersion(persistedProcessDefinition.getVersion());
-          processDefinition.setSuspensionState(persistedProcessDefinition.getSuspensionState());
-        }
-      }
-
-      // Add to cache
-      ProcessDefinitionCacheEntry cacheEntry = new ProcessDefinitionCacheEntry(processDefinition, bpmnModels.get(processDefinition.getKey()), processModels.get(processDefinition.getKey()));
-      processEngineConfiguration.getDeploymentManager().getProcessDefinitionCache().add(processDefinition.getId(), cacheEntry);
-      addDefinitionInfoToCache(processDefinition, processEngineConfiguration, commandContext);
-      
-      // Add to deployment for further usage
-      deployment.addDeployedArtifact(processDefinition);
     }
   }
   
   /**
-   * @param allProcessDefinitions
+   * Updates all the process definition entities to have the correct diagram resource name.  Must
+   * be called after createAndPersistNewDiagramsAsNeeded to ensure that any newly-created diagrams
+   * already have their resources attached to the deployment.
    */
-  private void verifyNoProcessDefinitionsShareKeys(
-      Iterable<ProcessDefinitionEntity> allProcessDefinitions) {
-    // TODO(stm): Auto-generated method stub
+  protected void setProcessDefinitionDiagramNames(AugmentedDeployment augmentedDeployment) {
+    Map<String, ResourceEntity> resources = augmentedDeployment.getDeployment().getResources();
+
+    for (ProcessDefinitionEntity processDefinition : augmentedDeployment.getAllProcessDefinitions()) {
+      String diagramResourceName = getDiagramResourceForProcess(
+          processDefinition.getResourceName(), processDefinition.getKey(), resources);
+      processDefinition.setDiagramResourceName(diagramResourceName);
+    }
+  }
+
+  /**
+   * Verifies that no two process definitions share the same key, to prevent database unique
+   * index violation.
+   * 
+   * @throws ActivitiException if two or more processes have the same key
+   */
+  protected void verifyNoProcessDefinitionsShareKeys(Iterable<ProcessDefinitionEntity> processDefinitions) {
+    Set<String> keySet = new LinkedHashSet<String>();
+    for (ProcessDefinitionEntity processDefinition : processDefinitions) {
+      if (keySet.contains(processDefinition.getKey())) {
+        throw new ActivitiException("The deployment contains process definitions with the same key (process id attribute), this is not allowed");
+      }
+      keySet.add(processDefinition.getKey());
+    }
+  }
+
+  protected Map<ProcessDefinitionEntity, ProcessDefinitionEntity> getPreviousVersionsOfProcessDefinitions(AugmentedDeployment augmentedDeployment) {
+    Map<ProcessDefinitionEntity, ProcessDefinitionEntity> result = new LinkedHashMap<ProcessDefinitionEntity, ProcessDefinitionEntity>();
+    CommandContext commandContext = Context.getCommandContext();
+    ProcessDefinitionEntityManager processDefinitionManager = commandContext.getProcessDefinitionEntityManager();
+    String tenantId = augmentedDeployment.getDeployment().getTenantId();
     
+    for (ProcessDefinitionEntity newDefinition : augmentedDeployment.getAllProcessDefinitions()) {
+      String key = newDefinition.getKey();
+
+      ProcessDefinitionEntity existingDefinition = null;
+      
+      if (tenantId != null && !tenantId.equals(ProcessEngineConfiguration.NO_TENANT_ID)) {
+        existingDefinition = processDefinitionManager.findLatestProcessDefinitionByKeyAndTenantId(key, tenantId);
+      } else {
+        existingDefinition = processDefinitionManager.findLatestProcessDefinitionByKey(key);
+      }
+      
+      if (existingDefinition != null) {
+        result.put(newDefinition, existingDefinition);
+      }
+    }
+    
+    return result;
+  }
+  
+  /**
+   * For each process definition, determines what the version should be by finding the latest
+   * existing process definition with the same key and (if set) tenant, and incrementing that.
+   * Modifies the process definitions in place.  If there isn't a version of the process
+   * definition already present, then this sets the version to 1.
+   */
+  protected void setProcessDefinitionVersionsAndIds(Map<ProcessDefinitionEntity, ProcessDefinitionEntity> mapNewToOldProcessDefinitions,
+      AugmentedDeployment augmentedDeployment) {
+    CommandContext commandContext = Context.getCommandContext();
+
+    for (ProcessDefinitionEntity processDefinition : augmentedDeployment.getAllProcessDefinitions()) {
+      int version = 1;
+      
+      ProcessDefinitionEntity latest = mapNewToOldProcessDefinitions.get(processDefinition);
+      if (latest != null) {
+        version = latest.getVersion() + 1;
+      }
+      
+      processDefinition.setVersion(version);
+      processDefinition.setId(getIdForNewProcessDefinition(processDefinition));
+      
+      if (commandContext.getProcessEngineConfiguration().getEventDispatcher().isEnabled()) {
+        commandContext.getProcessEngineConfiguration().getEventDispatcher().dispatchEvent(ActivitiEventBuilder.createEntityEvent(ActivitiEventType.ENTITY_CREATED, processDefinition));
+      }
+    }
+  }
+  
+  /**
+   * Saves each process definition.  It is assumed that the deployment is new, the definitions
+   * have never been saved before, and that they have all their values properly set up.
+   */
+  protected void persistProcessDefinitions(AugmentedDeployment augmentedDeployment) {
+    CommandContext commandContext = Context.getCommandContext();
+    ProcessDefinitionEntityManager processDefinitionManager = commandContext.getProcessDefinitionEntityManager();
+    
+    for (ProcessDefinitionEntity processDefinition : augmentedDeployment.getAllProcessDefinitions()) {
+      processDefinitionManager.insert(processDefinition, false);
+      
+      addAuthorizationsFromIterator(commandContext, processDefinition.getCandidateStarterUserIdExpressions(), processDefinition, ExprType.USER);
+      addAuthorizationsFromIterator(commandContext, processDefinition.getCandidateStarterGroupIdExpressions(), processDefinition, ExprType.GROUP);
+
+      if (commandContext.getProcessEngineConfiguration().getEventDispatcher().isEnabled()) {
+        commandContext.getProcessEngineConfiguration().getEventDispatcher().dispatchEvent(ActivitiEventBuilder.createEntityEvent(ActivitiEventType.ENTITY_INITIALIZED, processDefinition));
+      }
+    }
+  }
+  
+  protected void updateTimersAndEvents(AugmentedDeployment augmentedDeployment, Map<ProcessDefinitionEntity, ProcessDefinitionEntity> mapNewToOldProcessDefinitions) {
+    CommandContext commandContext = Context.getCommandContext();
+    for (ProcessDefinitionEntity processDefinition : augmentedDeployment.getAllProcessDefinitions()) {
+      Process process = augmentedDeployment.getProcessModelForProcessDefinition(processDefinition);
+      BpmnModel bpmnModel = augmentedDeployment.getBpmnModelForProcessDefinition(processDefinition);
+      
+      ProcessDefinitionEntity previousProcessDefinition = mapNewToOldProcessDefinitions.get(processDefinition);
+      
+      removeObsoleteMessageEventSubscriptions(processDefinition, previousProcessDefinition);
+      addMessageEventSubscriptions(processDefinition, process, bpmnModel);
+
+      removeObsoleteSignalEventSubScription(processDefinition, previousProcessDefinition);
+      addSignalEventSubscriptions(commandContext, processDefinition, process, bpmnModel);
+      
+      removeObsoleteTimers(processDefinition);
+      scheduleTimers(getTimerDeclarations(processDefinition, process));
+    }
+  }
+  
+  /**
+   * Returns the ID to use for a new process definition; subclasses may override this to provide
+   * their own identification scheme.
+   */
+  protected String getIdForNewProcessDefinition(ProcessDefinitionEntity processDefinition) {
+    String nextId = idGenerator.getNextId();
+    return processDefinition.getKey() + ":" + processDefinition.getVersion() + ":" + nextId; // ACT-505
+  }
+  
+  /**
+   * Loads the persisted version of each process definition and set values on the in-memory
+   * version to be consistent.
+   */
+  protected void makeProcessDefinitionsConsistentWithPersistedVersions(AugmentedDeployment augmentedDeployment) {
+    String deploymentId = augmentedDeployment.getDeployment().getId();
+    CommandContext commandContext = Context.getCommandContext();
+    ProcessDefinitionEntityManager processDefinitionManager = commandContext.getProcessDefinitionEntityManager();
+
+    for (ProcessDefinitionEntity processDefinition : augmentedDeployment.getAllProcessDefinitions()) {
+      ProcessDefinitionEntity persistedProcessDefinition = null;
+      if (processDefinition.getTenantId() == null || ProcessEngineConfiguration.NO_TENANT_ID.equals(processDefinition.getTenantId())) {
+        persistedProcessDefinition = processDefinitionManager.findProcessDefinitionByDeploymentAndKey(deploymentId, processDefinition.getKey());
+      } else {
+        persistedProcessDefinition = processDefinitionManager.findProcessDefinitionByDeploymentAndKeyAndTenantId(deploymentId, processDefinition.getKey(), processDefinition.getTenantId());
+      }
+
+      if (persistedProcessDefinition != null) {
+        processDefinition.setId(persistedProcessDefinition.getId());
+        processDefinition.setVersion(persistedProcessDefinition.getVersion());
+        processDefinition.setSuspensionState(persistedProcessDefinition.getSuspensionState());
+      }
+
+    }
+  }
+  
+  /**
+   * Ensures that the process definition is cached in the appropriate places, including the
+   * deployment's collection of deployed artifacts and the deployment manager's cache, as well
+   * as caching any ProcessDefinitionInfos.
+   */
+  protected void updateCachingAndArtifacts(AugmentedDeployment augmentedDeployment) {
+    CommandContext commandContext = Context.getCommandContext();
+    final ProcessEngineConfigurationImpl processEngineConfiguration = Context.getProcessEngineConfiguration();
+    DeploymentCache<ProcessDefinitionCacheEntry> processDefinitionCache = processEngineConfiguration.getDeploymentManager().getProcessDefinitionCache();
+    DeploymentEntity deployment = augmentedDeployment.getDeployment();
+
+    for (ProcessDefinitionEntity processDefinition : augmentedDeployment.getAllProcessDefinitions()) {
+      BpmnModel bpmnModel = augmentedDeployment.getBpmnModelForProcessDefinition(processDefinition);
+      Process process = augmentedDeployment.getProcessModelForProcessDefinition(processDefinition);
+      ProcessDefinitionCacheEntry cacheEntry = new ProcessDefinitionCacheEntry(processDefinition, bpmnModel, process);
+      processDefinitionCache.add(processDefinition.getId(), cacheEntry);
+      addDefinitionInfoToCache(processDefinition, processEngineConfiguration, commandContext);
+    
+      // Add to deployment for further usage
+      deployment.addDeployedArtifact(processDefinition);
+    }
   }
 
   protected void addDefinitionInfoToCache(ProcessDefinitionEntity processDefinition, 
@@ -293,7 +434,8 @@ public class BpmnDeployer implements Deployer {
     }
   }
 
-  protected void addTimerDeclarations(ProcessDefinitionEntity processDefinition, org.activiti.bpmn.model.Process process, List<TimerEntity> timers) {
+  protected List<TimerEntity> getTimerDeclarations(ProcessDefinitionEntity processDefinition, org.activiti.bpmn.model.Process process) {
+    List<TimerEntity> timers = new ArrayList<TimerEntity>();
     if (CollectionUtils.isNotEmpty(process.getFlowElements())) {
       for (FlowElement element : process.getFlowElements()) {
         if (element instanceof StartEvent) {
@@ -319,6 +461,8 @@ public class BpmnDeployer implements Deployer {
         }
       }
     }
+    
+    return timers;
   }
 
  protected void removeObsoleteTimers(ProcessDefinitionEntity processDefinition) {
