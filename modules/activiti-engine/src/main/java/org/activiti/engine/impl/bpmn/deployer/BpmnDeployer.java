@@ -96,6 +96,7 @@ public class BpmnDeployer implements Deployer {
   public void deploy(DeploymentEntity deployment, Map<String, Object> deploymentSettings) {
     log.debug("Processing deployment {}", deployment.getName());
 
+    // The ExpandedDeployment represents the deployment, the process definitions, and the BPMN resource, parse, and model associated with each process definition.
     ExpandedDeployment expandedDeployment = expandedDeploymentBuilderFactory.getBuilderForDeploymentAndSettings(deployment, deploymentSettings).build();
     
     verifyNoProcessDefinitionsShareKeys(expandedDeployment.getAllProcessDefinitions());

@@ -20,7 +20,10 @@ import java.util.Map;
 /**
  * An intermediate representation of a DeploymentEntity which keeps track of all of the entity's
  * ProcessDefinitionEntities and the resources and BPMN parses, models, and processes associated
- * with each ProcessDefinitionEntity. 
+ * with each ProcessDefinitionEntity.  The ProcessDefinitionEntities are expected to be
+ * "not fully set-up" - they may be inconsistent with the DeploymentEntity and/or the persisted
+ * versions, and if the deployment is new, they will not yet be persisted.  BpmnDeployer takes
+ * care of setting them up fully. 
  */
 public class ExpandedDeployment {
   private static final Logger log = LoggerFactory.getLogger(BpmnDeployer.class);
