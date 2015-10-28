@@ -67,6 +67,7 @@ import org.activiti.engine.impl.TaskServiceImpl;
 import org.activiti.engine.impl.asyncexecutor.DefaultAsyncJobExecutor;
 import org.activiti.engine.impl.bpmn.data.ItemInstance;
 import org.activiti.engine.impl.bpmn.deployer.BpmnDeployer;
+import org.activiti.engine.impl.bpmn.deployer.ExpandedDeployment;
 import org.activiti.engine.impl.bpmn.parser.BpmnParseHandlers;
 import org.activiti.engine.impl.bpmn.parser.BpmnParser;
 import org.activiti.engine.impl.bpmn.parser.factory.AbstractBehaviorFactory;
@@ -445,6 +446,7 @@ public abstract class ProcessEngineConfigurationImpl extends ProcessEngineConfig
 
   protected BpmnDeployer bpmnDeployer;
   protected BpmnParser bpmnParser;
+  protected ExpandedDeployment.BuilderFactory expandedDeploymentBuilderFactory;
   protected List<Deployer> customPreDeployers;
   protected List<Deployer> customPostDeployers;
   protected List<Deployer> deployers;
@@ -1363,10 +1365,18 @@ public abstract class ProcessEngineConfigurationImpl extends ProcessEngineConfig
     if (bpmnDeployer == null) {
       bpmnDeployer = new BpmnDeployer();
     }
-
+    
+    if (expandedDeploymentBuilderFactory == null) {
+      expandedDeploymentBuilderFactory = new ExpandedDeployment.BuilderFactory();
+    }
+    if(expandedDeploymentBuilderFactory.getBpmnParser() == null) {
+      expandedDeploymentBuilderFactory.setBpmnParser(bpmnParser);
+    }
+    
     bpmnDeployer.setExpressionManager(expressionManager);
     bpmnDeployer.setIdGenerator(idGenerator);
     bpmnDeployer.setBpmnParser(bpmnParser);
+    bpmnDeployer.setExpandedDeploymentBuilderFactory(expandedDeploymentBuilderFactory);
 
     defaultDeployers.add(bpmnDeployer);
     return defaultDeployers;
@@ -2037,11 +2047,21 @@ public abstract class ProcessEngineConfigurationImpl extends ProcessEngineConfig
   public BpmnParser getBpmnParser() {
     return bpmnParser;
   }
-
+  
   public ProcessEngineConfigurationImpl setBpmnParser(BpmnParser bpmnParser) {
     this.bpmnParser = bpmnParser;
     return this;
   }
+  
+  public ExpandedDeployment.BuilderFactory getExpandedDeploymentBuilderFactory() {
+    return expandedDeploymentBuilderFactory;
+  }
+
+  public ProcessEngineConfigurationImpl setExpandedDeploymentBuilderFactory(ExpandedDeployment.BuilderFactory factory) {
+    this.expandedDeploymentBuilderFactory = factory;
+    return this;
+  }
+
 
   public List<Deployer> getDeployers() {
     return deployers;

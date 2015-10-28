@@ -90,47 +90,47 @@ public class BpmnDeployer implements Deployer {
   protected ExpressionManager expressionManager;
   protected BpmnParser bpmnParser;
   protected IdGenerator idGenerator;
+  protected ExpandedDeployment.BuilderFactory expandedDeploymentBuilderFactory;
 
   @Override
   public void deploy(DeploymentEntity deployment, Map<String, Object> deploymentSettings) {
     log.debug("Processing deployment {}", deployment.getName());
 
-    AugmentedBpmnParse.Builder parseBuilder = new AugmentedBpmnParse.Builder(deployment, bpmnParser, deploymentSettings);
-    AugmentedDeployment augmentedDeployment = new AugmentedDeployment.Builder(deployment, parseBuilder).build();
+    ExpandedDeployment expandedDeployment = expandedDeploymentBuilderFactory.getBuilderForDeploymentAndSettings(deployment, deploymentSettings).build();
     
-    verifyNoProcessDefinitionsShareKeys(augmentedDeployment.getAllProcessDefinitions());
+    verifyNoProcessDefinitionsShareKeys(expandedDeployment.getAllProcessDefinitions());
 
-    makeProcessDefinitionsTakeValuesFromDeployment(augmentedDeployment);
-    setResourceNamesOnProcessDefinitions(augmentedDeployment);
+    makeProcessDefinitionsTakeValuesFromDeployment(expandedDeployment);
+    setResourceNamesOnProcessDefinitions(expandedDeployment);
     
-    createAndPersistNewDiagramsAsNeeded(augmentedDeployment);
-    setProcessDefinitionDiagramNames(augmentedDeployment);
+    createAndPersistNewDiagramsAsNeeded(expandedDeployment);
+    setProcessDefinitionDiagramNames(expandedDeployment);
     
     if (deployment.isNew()) {
       Map<ProcessDefinitionEntity, ProcessDefinitionEntity> mapOfNewProcessDefinitionToPreviousVersion =
-          getPreviousVersionsOfProcessDefinitions(augmentedDeployment);
-      setProcessDefinitionVersionsAndIds(mapOfNewProcessDefinitionToPreviousVersion, augmentedDeployment);
-      persistProcessDefinitions(augmentedDeployment);
+          getPreviousVersionsOfProcessDefinitions(expandedDeployment);
+      setProcessDefinitionVersionsAndIds(mapOfNewProcessDefinitionToPreviousVersion, expandedDeployment);
+      persistProcessDefinitions(expandedDeployment);
 
-      updateTimersAndEvents(augmentedDeployment, mapOfNewProcessDefinitionToPreviousVersion);
+      updateTimersAndEvents(expandedDeployment, mapOfNewProcessDefinitionToPreviousVersion);
     } else {
-      makeProcessDefinitionsConsistentWithPersistedVersions(augmentedDeployment);
+      makeProcessDefinitionsConsistentWithPersistedVersions(expandedDeployment);
     }
     
-    updateCachingAndArtifacts(augmentedDeployment);
+    updateCachingAndArtifacts(expandedDeployment);
   }
 
   /**
    * Updates all the process definition entities to match the deployment's values for tenant,
    * engine version, and deployment id.
    */
-  protected void makeProcessDefinitionsTakeValuesFromDeployment(AugmentedDeployment augmentedDeployment) {
-    DeploymentEntity deployment = augmentedDeployment.getDeployment();
+  protected void makeProcessDefinitionsTakeValuesFromDeployment(ExpandedDeployment expandedDeployment) {
+    DeploymentEntity deployment = expandedDeployment.getDeployment();
     String engineVersion = deployment.getEngineVersion();
     String tenantId = deployment.getTenantId();
     String deploymentId = deployment.getId();
     
-    for (ProcessDefinitionEntity processDefinition : augmentedDeployment.getAllProcessDefinitions()) {
+    for (ProcessDefinitionEntity processDefinition : expandedDeployment.getAllProcessDefinitions()) {
       // Backwards compatibility
       if (engineVersion != null) {
         processDefinition.setEngineVersion(engineVersion);
@@ -147,11 +147,10 @@ public class BpmnDeployer implements Deployer {
   /**
    * Updates all the process definition entities to have the correct resource names.
    */
-  protected void setResourceNamesOnProcessDefinitions(AugmentedDeployment augmentedDeployment) {
-    for (ProcessDefinitionEntity processDefinition : augmentedDeployment.getAllProcessDefinitions()) {
-      String resourceName = augmentedDeployment.getAugmentedParseForProcessDefinition(processDefinition).getResourceName();
+  protected void setResourceNamesOnProcessDefinitions(ExpandedDeployment expandedDeployment) {
+    for (ProcessDefinitionEntity processDefinition : expandedDeployment.getAllProcessDefinitions()) {
+      String resourceName = expandedDeployment.getResourceForProcessDefinition(processDefinition).getName();
       processDefinition.setResourceName(resourceName);
-      
     }
   }
 
@@ -161,22 +160,22 @@ public class BpmnDeployer implements Deployer {
    * creates a new diagram, it also persists it via the ResourceEntityManager and adds it to the
    * resources of the deployment.
    */
-  protected void createAndPersistNewDiagramsAsNeeded(AugmentedDeployment augmentedDeployment) {
+  protected void createAndPersistNewDiagramsAsNeeded(ExpandedDeployment expandedDeployment) {
     final ProcessEngineConfigurationImpl processEngineConfiguration = Context.getProcessEngineConfiguration();
-    DeploymentEntity deployment = augmentedDeployment.getDeployment();
+    DeploymentEntity deployment = expandedDeployment.getDeployment();
     
-    if (augmentedDeployment.getDeployment().isNew() && processEngineConfiguration.isCreateDiagramOnDeploy()) {
+    if (expandedDeployment.getDeployment().isNew() && processEngineConfiguration.isCreateDiagramOnDeploy()) {
       ResourceEntityManager resourceEntityManager = processEngineConfiguration.getResourceEntityManager();
       
-      for (ProcessDefinitionEntity processDefinition : augmentedDeployment.getAllProcessDefinitions()) {
+      for (ProcessDefinitionEntity processDefinition : expandedDeployment.getAllProcessDefinitions()) {
         if (processDefinition.isGraphicalNotationDefined()) {
           String resourceName = processDefinition.getResourceName();
           String diagramResourceName = getDiagramResourceForProcess(
               resourceName, // was already set up in setResourceNamesOnProcessDefinitions called from deploy 
               processDefinition.getKey(), 
-              augmentedDeployment.getDeployment().getResources());
+              expandedDeployment.getDeployment().getResources());
           if (diagramResourceName == null) { // didn't find anything
-            BpmnParse bpmnParse = augmentedDeployment.getBpmnParseForProcessDefinition(processDefinition);
+            BpmnParse bpmnParse = expandedDeployment.getBpmnParseForProcessDefinition(processDefinition);
             try {
               byte[] diagramBytes = IoUtil.readInputStream(
                   processEngineConfiguration.getProcessDiagramGenerator().generateDiagram(bpmnParse.getBpmnModel(), "png", processEngineConfiguration.getActivityFontName(),
@@ -208,10 +207,10 @@ public class BpmnDeployer implements Deployer {
    * be called after createAndPersistNewDiagramsAsNeeded to ensure that any newly-created diagrams
    * already have their resources attached to the deployment.
    */
-  protected void setProcessDefinitionDiagramNames(AugmentedDeployment augmentedDeployment) {
-    Map<String, ResourceEntity> resources = augmentedDeployment.getDeployment().getResources();
+  protected void setProcessDefinitionDiagramNames(ExpandedDeployment expandedDeployment) {
+    Map<String, ResourceEntity> resources = expandedDeployment.getDeployment().getResources();
 
-    for (ProcessDefinitionEntity processDefinition : augmentedDeployment.getAllProcessDefinitions()) {
+    for (ProcessDefinitionEntity processDefinition : expandedDeployment.getAllProcessDefinitions()) {
       String diagramResourceName = getDiagramResourceForProcess(
           processDefinition.getResourceName(), processDefinition.getKey(), resources);
       processDefinition.setDiagramResourceName(diagramResourceName);
@@ -234,13 +233,13 @@ public class BpmnDeployer implements Deployer {
     }
   }
 
-  protected Map<ProcessDefinitionEntity, ProcessDefinitionEntity> getPreviousVersionsOfProcessDefinitions(AugmentedDeployment augmentedDeployment) {
+  protected Map<ProcessDefinitionEntity, ProcessDefinitionEntity> getPreviousVersionsOfProcessDefinitions(ExpandedDeployment expandedDeployment) {
     Map<ProcessDefinitionEntity, ProcessDefinitionEntity> result = new LinkedHashMap<ProcessDefinitionEntity, ProcessDefinitionEntity>();
     CommandContext commandContext = Context.getCommandContext();
     ProcessDefinitionEntityManager processDefinitionManager = commandContext.getProcessDefinitionEntityManager();
-    String tenantId = augmentedDeployment.getDeployment().getTenantId();
+    String tenantId = expandedDeployment.getDeployment().getTenantId();
     
-    for (ProcessDefinitionEntity newDefinition : augmentedDeployment.getAllProcessDefinitions()) {
+    for (ProcessDefinitionEntity newDefinition : expandedDeployment.getAllProcessDefinitions()) {
       String key = newDefinition.getKey();
 
       ProcessDefinitionEntity existingDefinition = null;
@@ -266,10 +265,10 @@ public class BpmnDeployer implements Deployer {
    * definition already present, then this sets the version to 1.
    */
   protected void setProcessDefinitionVersionsAndIds(Map<ProcessDefinitionEntity, ProcessDefinitionEntity> mapNewToOldProcessDefinitions,
-      AugmentedDeployment augmentedDeployment) {
+      ExpandedDeployment expandedDeployment) {
     CommandContext commandContext = Context.getCommandContext();
 
-    for (ProcessDefinitionEntity processDefinition : augmentedDeployment.getAllProcessDefinitions()) {
+    for (ProcessDefinitionEntity processDefinition : expandedDeployment.getAllProcessDefinitions()) {
       int version = 1;
       
       ProcessDefinitionEntity latest = mapNewToOldProcessDefinitions.get(processDefinition);
@@ -290,11 +289,11 @@ public class BpmnDeployer implements Deployer {
    * Saves each process definition.  It is assumed that the deployment is new, the definitions
    * have never been saved before, and that they have all their values properly set up.
    */
-  protected void persistProcessDefinitions(AugmentedDeployment augmentedDeployment) {
+  protected void persistProcessDefinitions(ExpandedDeployment expandedDeployment) {
     CommandContext commandContext = Context.getCommandContext();
     ProcessDefinitionEntityManager processDefinitionManager = commandContext.getProcessDefinitionEntityManager();
     
-    for (ProcessDefinitionEntity processDefinition : augmentedDeployment.getAllProcessDefinitions()) {
+    for (ProcessDefinitionEntity processDefinition : expandedDeployment.getAllProcessDefinitions()) {
       processDefinitionManager.insert(processDefinition, false);
       
       addAuthorizationsFromIterator(commandContext, processDefinition.getCandidateStarterUserIdExpressions(), processDefinition, ExprType.USER);
@@ -306,11 +305,11 @@ public class BpmnDeployer implements Deployer {
     }
   }
   
-  protected void updateTimersAndEvents(AugmentedDeployment augmentedDeployment, Map<ProcessDefinitionEntity, ProcessDefinitionEntity> mapNewToOldProcessDefinitions) {
+  protected void updateTimersAndEvents(ExpandedDeployment expandedDeployment, Map<ProcessDefinitionEntity, ProcessDefinitionEntity> mapNewToOldProcessDefinitions) {
     CommandContext commandContext = Context.getCommandContext();
-    for (ProcessDefinitionEntity processDefinition : augmentedDeployment.getAllProcessDefinitions()) {
-      Process process = augmentedDeployment.getProcessModelForProcessDefinition(processDefinition);
-      BpmnModel bpmnModel = augmentedDeployment.getBpmnModelForProcessDefinition(processDefinition);
+    for (ProcessDefinitionEntity processDefinition : expandedDeployment.getAllProcessDefinitions()) {
+      Process process = expandedDeployment.getProcessModelForProcessDefinition(processDefinition);
+      BpmnModel bpmnModel = expandedDeployment.getBpmnModelForProcessDefinition(processDefinition);
       
       ProcessDefinitionEntity previousProcessDefinition = mapNewToOldProcessDefinitions.get(processDefinition);
       
@@ -345,12 +344,12 @@ public class BpmnDeployer implements Deployer {
    * Loads the persisted version of each process definition and set values on the in-memory
    * version to be consistent.
    */
-  protected void makeProcessDefinitionsConsistentWithPersistedVersions(AugmentedDeployment augmentedDeployment) {
-    String deploymentId = augmentedDeployment.getDeployment().getId();
+  protected void makeProcessDefinitionsConsistentWithPersistedVersions(ExpandedDeployment expandedDeployment) {
+    String deploymentId = expandedDeployment.getDeployment().getId();
     CommandContext commandContext = Context.getCommandContext();
     ProcessDefinitionEntityManager processDefinitionManager = commandContext.getProcessDefinitionEntityManager();
 
-    for (ProcessDefinitionEntity processDefinition : augmentedDeployment.getAllProcessDefinitions()) {
+    for (ProcessDefinitionEntity processDefinition : expandedDeployment.getAllProcessDefinitions()) {
       ProcessDefinitionEntity persistedProcessDefinition = null;
       if (processDefinition.getTenantId() == null || ProcessEngineConfiguration.NO_TENANT_ID.equals(processDefinition.getTenantId())) {
         persistedProcessDefinition = processDefinitionManager.findProcessDefinitionByDeploymentAndKey(deploymentId, processDefinition.getKey());
@@ -372,15 +371,15 @@ public class BpmnDeployer implements Deployer {
    * deployment's collection of deployed artifacts and the deployment manager's cache, as well
    * as caching any ProcessDefinitionInfos.
    */
-  protected void updateCachingAndArtifacts(AugmentedDeployment augmentedDeployment) {
+  protected void updateCachingAndArtifacts(ExpandedDeployment expandedDeployment) {
     CommandContext commandContext = Context.getCommandContext();
     final ProcessEngineConfigurationImpl processEngineConfiguration = Context.getProcessEngineConfiguration();
     DeploymentCache<ProcessDefinitionCacheEntry> processDefinitionCache = processEngineConfiguration.getDeploymentManager().getProcessDefinitionCache();
-    DeploymentEntity deployment = augmentedDeployment.getDeployment();
+    DeploymentEntity deployment = expandedDeployment.getDeployment();
 
-    for (ProcessDefinitionEntity processDefinition : augmentedDeployment.getAllProcessDefinitions()) {
-      BpmnModel bpmnModel = augmentedDeployment.getBpmnModelForProcessDefinition(processDefinition);
-      Process process = augmentedDeployment.getProcessModelForProcessDefinition(processDefinition);
+    for (ProcessDefinitionEntity processDefinition : expandedDeployment.getAllProcessDefinitions()) {
+      BpmnModel bpmnModel = expandedDeployment.getBpmnModelForProcessDefinition(processDefinition);
+      Process process = expandedDeployment.getProcessModelForProcessDefinition(processDefinition);
       ProcessDefinitionCacheEntry cacheEntry = new ProcessDefinitionCacheEntry(processDefinition, bpmnModel, process);
       processDefinitionCache.add(processDefinition.getId(), cacheEntry);
       addDefinitionInfoToCache(processDefinition, processEngineConfiguration, commandContext);
@@ -711,6 +710,10 @@ public class BpmnDeployer implements Deployer {
 
   public void setIdGenerator(IdGenerator idGenerator) {
     this.idGenerator = idGenerator;
+  }
+  
+  public void setExpandedDeploymentBuilderFactory(ExpandedDeployment.BuilderFactory factory) {
+    this.expandedDeploymentBuilderFactory = factory;
   }
 
 }

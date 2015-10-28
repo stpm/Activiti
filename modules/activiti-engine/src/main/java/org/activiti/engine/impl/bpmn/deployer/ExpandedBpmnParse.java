@@ -20,16 +20,16 @@ public class ExpandedBpmnParse {
   /**
    * The resource from which this was created.
    */
-  private final String resourceName;
+  private final ResourceEntity resource;
 
   /**
    * All the process definitions associated with this parse.
    */
   private final Collection<ProcessDefinitionEntity> definitions;
   
-  public ExpandedBpmnParse(BpmnParse alreadyExecutedParse, String resourceName) {
+  public ExpandedBpmnParse(BpmnParse alreadyExecutedParse, ResourceEntity resource) {
     this.alreadyExecutedParse = alreadyExecutedParse;
-    this.resourceName = resourceName;
+    this.resource = resource;
 
     this.definitions = 
         Collections.unmodifiableList(alreadyExecutedParse.getProcessDefinitions());
@@ -43,8 +43,8 @@ public class ExpandedBpmnParse {
     return alreadyExecutedParse;
   }
   
-  public String getResourceName() {
-    return resourceName;
+  public ResourceEntity getResource() {
+    return resource;
   }
   
   public static class Builder {
@@ -62,7 +62,7 @@ public class ExpandedBpmnParse {
       ByteArrayInputStream inputStream = new ByteArrayInputStream(resource.getBytes());
       BpmnParse executedParse = createBpmnParse(resource.getName(), inputStream);
       
-      return new ExpandedBpmnParse(executedParse, resource.getName());
+      return new ExpandedBpmnParse(executedParse, resource);
     }
     
     protected BpmnParse createBpmnParse(String resourceName, ByteArrayInputStream inputStream) {

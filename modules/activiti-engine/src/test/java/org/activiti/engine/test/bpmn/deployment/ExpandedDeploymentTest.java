@@ -20,9 +20,7 @@ import static org.hamcrest.CoreMatchers.sameInstance;
 import static org.hamcrest.MatcherAssert.assertThat;
 
 import org.activiti.engine.impl.bpmn.deployer.BpmnDeployer;
-import org.activiti.engine.impl.bpmn.deployer.ExpandedBpmnParse;
 import org.activiti.engine.impl.bpmn.deployer.ExpandedDeployment;
-import org.activiti.engine.impl.bpmn.parser.BpmnParser;
 import org.activiti.engine.impl.context.Context;
 import org.activiti.engine.impl.persistence.entity.DeploymentEntity;
 import org.activiti.engine.impl.persistence.entity.DeploymentEntityImpl;
@@ -52,15 +50,14 @@ public class ExpandedDeploymentTest extends PluggableActivitiTestCase {
   private static final String EN_XML_NAME = "en." + BpmnDeployer.BPMN_RESOURCE_SUFFIXES[1];
       
   public void testCreateAndQuery() {
-    DeploymentEntity entity = assembleUnpersistedDeploymentEntity();
-
-    BpmnParser bpmnParser = processEngineConfiguration.getBpmnParser();
-    
     Context.setCommandContext(processEngineConfiguration.getCommandContextFactory().createCommandContext(null));
     
-    ExpandedBpmnParse.Builder parseBuilder = new ExpandedBpmnParse.Builder(entity, bpmnParser, null);
-    ExpandedDeployment.Builder expandedDeploymentBuilder = new ExpandedDeployment.Builder(entity, parseBuilder);
-    ExpandedDeployment expanded = expandedDeploymentBuilder.build();
+    DeploymentEntity entity = assembleUnpersistedDeploymentEntity();
+
+    ExpandedDeployment.BuilderFactory builderFactory = processEngineConfiguration.getExpandedDeploymentBuilderFactory();
+    ExpandedDeployment.Builder builder = builderFactory.getBuilderForDeployment(entity);
+    ExpandedDeployment expanded = builder.build();
+    
     List<ProcessDefinitionEntity> processDefinitions = expanded.getAllProcessDefinitions();
     
     assertThat(expanded.getDeployment(), sameInstance(entity));
@@ -72,13 +69,16 @@ public class ExpandedDeploymentTest extends PluggableActivitiTestCase {
         sameInstance(expanded.getBpmnParseForProcessDefinition(id2)));
     assertThat(expanded.getBpmnModelForProcessDefinition(id1), sameInstance(expanded.getBpmnParseForProcessDefinition(id1).getBpmnModel()));
     assertThat(expanded.getProcessModelForProcessDefinition(id1), sameInstance(expanded.getBpmnParseForProcessDefinition(id1).getBpmnModel().getProcessById(id1.getKey())));
+    assertThat(expanded.getResourceForProcessDefinition(id1).getName(), equalTo(IDR_XML_NAME));
+    assertThat(expanded.getResourceForProcessDefinition(id2).getName(), equalTo(IDR_XML_NAME));
     
     ProcessDefinitionEntity en1 = getProcessDefinitionEntityFromList(processDefinitions, EN1_ID);
     ProcessDefinitionEntity en2 = getProcessDefinitionEntityFromList(processDefinitions, EN2_ID);
     assertThat(expanded.getBpmnParseForProcessDefinition(en1), 
         sameInstance(expanded.getBpmnParseForProcessDefinition(en2)));
     assertThat(expanded.getBpmnParseForProcessDefinition(en1), not(equalTo(expanded.getBpmnParseForProcessDefinition(id2))));
-    
+    assertThat(expanded.getResourceForProcessDefinition(en1).getName(), equalTo(EN_XML_NAME));
+    assertThat(expanded.getResourceForProcessDefinition(en2).getName(), equalTo(EN_XML_NAME));
   }
   
   private ProcessDefinitionEntity getProcessDefinitionEntityFromList(List<ProcessDefinitionEntity> list, String idString) {

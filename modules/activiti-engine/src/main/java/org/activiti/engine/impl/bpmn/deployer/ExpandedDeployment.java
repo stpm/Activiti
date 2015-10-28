@@ -3,6 +3,7 @@ package org.activiti.engine.impl.bpmn.deployer;
 import org.activiti.bpmn.model.BpmnModel;
 import org.activiti.bpmn.model.Process;
 import org.activiti.engine.impl.bpmn.parser.BpmnParse;
+import org.activiti.engine.impl.bpmn.parser.BpmnParser;
 import org.activiti.engine.impl.persistence.entity.DeploymentEntity;
 import org.activiti.engine.impl.persistence.entity.ProcessDefinitionEntity;
 import org.activiti.engine.impl.persistence.entity.ResourceEntity;
@@ -36,27 +37,33 @@ public class ExpandedDeployment {
   public List<ProcessDefinitionEntity> getAllProcessDefinitions() {
     List<ProcessDefinitionEntity> result = new ArrayList<ProcessDefinitionEntity>();
     
-    for (ExpandedBpmnParse augmentedParse : parses) {
-      result.addAll(augmentedParse.getAllProcessDefinitions());
+    for (ExpandedBpmnParse expandedParse : parses) {
+      result.addAll(expandedParse.getAllProcessDefinitions());
     }
     
     return result;
   }
 
-  public ExpandedBpmnParse getAugmentedParseForProcessDefinition(ProcessDefinitionEntity entity) {
-    for (ExpandedBpmnParse augmentedParse : getAugmentedParses()) {
-      if (augmentedParse.getAllProcessDefinitions().contains(entity)) {
-        return augmentedParse;
+  private ExpandedBpmnParse getExpandedParseForProcessDefinition(ProcessDefinitionEntity entity) {
+    for (ExpandedBpmnParse expandedParse : getExpandedParses()) {
+      if (expandedParse.getAllProcessDefinitions().contains(entity)) {
+        return expandedParse;
       }
     }
     
     return null;
   }
+  
+  public ResourceEntity getResourceForProcessDefinition(ProcessDefinitionEntity processDefinition) {
+    ExpandedBpmnParse expandedParse = getExpandedParseForProcessDefinition(processDefinition);
+    
+    return (expandedParse == null ? null : expandedParse.getResource());
+  }
 
   public BpmnParse getBpmnParseForProcessDefinition(ProcessDefinitionEntity processDefinition) {
-    ExpandedBpmnParse augmented = getAugmentedParseForProcessDefinition(processDefinition);
+    ExpandedBpmnParse expanded = getExpandedParseForProcessDefinition(processDefinition);
     
-    return (augmented == null ? null : augmented.getBpmnParse());
+    return (expanded == null ? null : expanded.getBpmnParse());
   }
 
   public BpmnModel getBpmnModelForProcessDefinition(ProcessDefinitionEntity processDefinition) {
@@ -71,7 +78,7 @@ public class ExpandedDeployment {
     return (model == null ? null : model.getProcessById(processDefinition.getKey()));
   }
   
-  protected Collection<ExpandedBpmnParse> getAugmentedParses() {
+  protected Collection<ExpandedBpmnParse> getExpandedParses() {
     return parses;
   }
   
@@ -103,6 +110,28 @@ public class ExpandedDeployment {
       }
       
       return parses;
+    }
+  }
+  
+  public static class BuilderFactory {
+    protected BpmnParser bpmnParser;
+    
+    public BpmnParser getBpmnParser() {
+      return bpmnParser;
+    }
+    
+    public void setBpmnParser(BpmnParser bpmnParser) {
+      this.bpmnParser = bpmnParser;
+    }
+    
+    public Builder getBuilderForDeployment(DeploymentEntity deployment) {
+      return getBuilderForDeploymentAndSettings(deployment, null);
+    }
+    
+    public Builder getBuilderForDeploymentAndSettings(DeploymentEntity deployment, Map<String, Object> deploymentSettings) {
+      ExpandedBpmnParse.Builder bpmnParseBuilder = new ExpandedBpmnParse.Builder(deployment, bpmnParser, deploymentSettings);
+      
+      return new Builder(deployment, bpmnParseBuilder);
     }
   }
     
