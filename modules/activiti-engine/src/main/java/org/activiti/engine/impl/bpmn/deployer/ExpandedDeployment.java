@@ -13,59 +13,49 @@ import org.slf4j.LoggerFactory;
 
 import java.io.ByteArrayInputStream;
 import java.util.ArrayList;
-import java.util.Collection;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
 /**
- * A DeploymentEntity along with all the associated process definitions and BPMN models. 
+ * An intermediate representation of a DeploymentEntity which keeps track of all of the entity's
+ * ProcessDefinitionEntities and the resources and BPMN parses, models, and processes associated
+ * with each ProcessDefinitionEntity. 
  */
 public class ExpandedDeployment {
   private static final Logger log = LoggerFactory.getLogger(BpmnDeployer.class);
 
   private DeploymentEntity deploymentEntity;
-  private Collection<ExpandedBpmnParse> parses;
 
-  private ExpandedDeployment(DeploymentEntity entity,
-      Collection<ExpandedBpmnParse> parses) {
+  private List<ProcessDefinitionEntity> processDefinitions;
+  private Map<ProcessDefinitionEntity, BpmnParse> mapProcessDefinitionsToParses;
+  private Map<ProcessDefinitionEntity, ResourceEntity> mapProcessDefinitionsToResources;
+  
+  private ExpandedDeployment(
+      DeploymentEntity entity, List<ProcessDefinitionEntity> processDefinitions,
+      Map<ProcessDefinitionEntity, BpmnParse> mapProcessDefinitionsToParses,
+      Map<ProcessDefinitionEntity, ResourceEntity> mapProcessDefinitionsToResources) {
     this.deploymentEntity = entity;
-    this.parses = parses;
+    this.processDefinitions = processDefinitions;
+    this.mapProcessDefinitionsToParses = mapProcessDefinitionsToParses;
+    this.mapProcessDefinitionsToResources = mapProcessDefinitionsToResources;
   }
+
   
   public DeploymentEntity getDeployment() {
     return deploymentEntity;
   }
 
   public List<ProcessDefinitionEntity> getAllProcessDefinitions() {
-    List<ProcessDefinitionEntity> result = new ArrayList<ProcessDefinitionEntity>();
-    
-    for (ExpandedBpmnParse expandedParse : parses) {
-      result.addAll(expandedParse.getAllProcessDefinitions());
-    }
-    
-    return result;
+    return processDefinitions;
   }
 
-  private ExpandedBpmnParse getExpandedParseForProcessDefinition(ProcessDefinitionEntity entity) {
-    for (ExpandedBpmnParse expandedParse : getExpandedParses()) {
-      if (expandedParse.getAllProcessDefinitions().contains(entity)) {
-        return expandedParse;
-      }
-    }
-    
-    return null;
-  }
-  
   public ResourceEntity getResourceForProcessDefinition(ProcessDefinitionEntity processDefinition) {
-    ExpandedBpmnParse expandedParse = getExpandedParseForProcessDefinition(processDefinition);
-    
-    return (expandedParse == null ? null : expandedParse.getResource());
+    return mapProcessDefinitionsToResources.get(processDefinition);
   }
 
   public BpmnParse getBpmnParseForProcessDefinition(ProcessDefinitionEntity processDefinition) {
-    ExpandedBpmnParse expanded = getExpandedParseForProcessDefinition(processDefinition);
-    
-    return (expanded == null ? null : expanded.getBpmnParse());
+    return mapProcessDefinitionsToParses.get(processDefinition);
   }
 
   public BpmnModel getBpmnModelForProcessDefinition(ProcessDefinitionEntity processDefinition) {
@@ -80,10 +70,6 @@ public class ExpandedDeployment {
     return (model == null ? null : model.getProcessById(processDefinition.getKey()));
   }
   
-  protected Collection<ExpandedBpmnParse> getExpandedParses() {
-    return parses;
-  }
-  
   public static class Builder {
     private final DeploymentEntity deployment;
     private final BpmnParser bpmnParser;
@@ -96,33 +82,29 @@ public class ExpandedDeployment {
     }
 
     public ExpandedDeployment build() {
-      List<ExpandedBpmnParse> parses = getParses();
+      List<ProcessDefinitionEntity> processDefinitions = new ArrayList<ProcessDefinitionEntity>();
+      Map<ProcessDefinitionEntity, BpmnParse> mapProcessDefinitionsToParses = new LinkedHashMap<ProcessDefinitionEntity, BpmnParse>();
+      Map<ProcessDefinitionEntity, ResourceEntity> mapProcessDefinitionsToResources = new LinkedHashMap<ProcessDefinitionEntity, ResourceEntity>();
 
-      return new ExpandedDeployment(deployment, parses);
-    }
-    
-    private List<ExpandedBpmnParse> getParses() {
-      List<ExpandedBpmnParse> result = new ArrayList<ExpandedBpmnParse>();
-      
       for (ResourceEntity resource : deployment.getResources().values()) {
         if (isBpmnResource(resource.getName())) {
           log.debug("Processing BPMN resource {}", resource.getName());
-          ExpandedBpmnParse parse = buildParseForResource(resource);
-          result.add(parse);
+          BpmnParse parse = createExecutedBpmnParseFromResource(resource);
+          for (ProcessDefinitionEntity oneDefinition : parse.getProcessDefinitions()) {
+            processDefinitions.add(oneDefinition);
+            mapProcessDefinitionsToParses.put(oneDefinition, parse);
+            mapProcessDefinitionsToResources.put(oneDefinition, resource);
+          }
         }
       }
-      
-      return result;
-    }
 
-    private ExpandedBpmnParse buildParseForResource(ResourceEntity resource) {
+      return new ExpandedDeployment(deployment,processDefinitions, mapProcessDefinitionsToParses, mapProcessDefinitionsToResources);
+    }
+    
+    private BpmnParse createExecutedBpmnParseFromResource(ResourceEntity resource) {
+      String resourceName = resource.getName();
       ByteArrayInputStream inputStream = new ByteArrayInputStream(resource.getBytes());
-      BpmnParse executedParse = createBpmnParse(resource.getName(), inputStream);
 
-      return new ExpandedBpmnParse(executedParse, resource);
-    }
-
-    private BpmnParse createBpmnParse(String resourceName, ByteArrayInputStream inputStream) {
       BpmnParse bpmnParse = bpmnParser.createParse()
           .sourceInputStream(inputStream)
           .setSourceSystemId(resourceName)
