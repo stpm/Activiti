@@ -148,11 +148,10 @@ public class BpmnDeployer implements Deployer {
    * Updates all the process definition entities to have the correct resource names.
    */
   protected void setResourceNamesOnProcessDefinitions(AugmentedDeployment augmentedDeployment) {
-    for (AugmentedBpmnParse parse : augmentedDeployment.getAugmentedParses()) {
-      String resourceName = parse.getResourceName();
-      for (ProcessDefinitionEntity processDefinition : parse.getAllProcessDefinitions()) {
-        processDefinition.setResourceName(resourceName);
-      }
+    for (ProcessDefinitionEntity processDefinition : augmentedDeployment.getAllProcessDefinitions()) {
+      String resourceName = augmentedDeployment.getAugmentedParseForProcessDefinition(processDefinition).getResourceName();
+      processDefinition.setResourceName(resourceName);
+      
     }
   }
 
@@ -177,7 +176,7 @@ public class BpmnDeployer implements Deployer {
               processDefinition.getKey(), 
               augmentedDeployment.getDeployment().getResources());
           if (diagramResourceName == null) { // didn't find anything
-            BpmnParse bpmnParse = augmentedDeployment.bpmnParseForProcessDefinition(processDefinition);
+            BpmnParse bpmnParse = augmentedDeployment.getBpmnParseForProcessDefinition(processDefinition);
             try {
               byte[] diagramBytes = IoUtil.readInputStream(
                   processEngineConfiguration.getProcessDiagramGenerator().generateDiagram(bpmnParse.getBpmnModel(), "png", processEngineConfiguration.getActivityFontName(),
