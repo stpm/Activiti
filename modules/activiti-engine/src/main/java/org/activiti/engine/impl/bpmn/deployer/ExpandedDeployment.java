@@ -4,12 +4,14 @@ import org.activiti.bpmn.model.BpmnModel;
 import org.activiti.bpmn.model.Process;
 import org.activiti.engine.impl.bpmn.parser.BpmnParse;
 import org.activiti.engine.impl.bpmn.parser.BpmnParser;
+import org.activiti.engine.impl.cmd.DeploymentSettings;
 import org.activiti.engine.impl.persistence.entity.DeploymentEntity;
 import org.activiti.engine.impl.persistence.entity.ProcessDefinitionEntity;
 import org.activiti.engine.impl.persistence.entity.ResourceEntity;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.ByteArrayInputStream;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
@@ -84,32 +86,69 @@ public class ExpandedDeployment {
   
   public static class Builder {
     private final DeploymentEntity deployment;
-    private final ExpandedBpmnParse.Builder parseBuilder;
+    private final BpmnParser bpmnParser;
+    private final Map<String, Object> deploymentSettings;
 
-    public Builder(DeploymentEntity deployment, ExpandedBpmnParse.Builder parseBuilder) {
+    public Builder(DeploymentEntity deployment, BpmnParser bpmnParser, Map<String, Object> deploymentSettings) {
       this.deployment = deployment;
-      this.parseBuilder = parseBuilder;
+      this.bpmnParser = bpmnParser;
+      this.deploymentSettings = deploymentSettings;
     }
-    
+
     public ExpandedDeployment build() {
       List<ExpandedBpmnParse> parses = getParses();
-      
+
       return new ExpandedDeployment(deployment, parses);
     }
-
-    protected List<ExpandedBpmnParse> getParses() {
-      List<ExpandedBpmnParse> parses = new ArrayList<ExpandedBpmnParse>();
+    
+    private List<ExpandedBpmnParse> getParses() {
+      List<ExpandedBpmnParse> result = new ArrayList<ExpandedBpmnParse>();
       
-      Map<String, ResourceEntity> resources = deployment.getResources();
-      for (String resourceName : resources.keySet()) {
-        if (isBpmnResource(resourceName)) {
-          log.info("Processing BPMN resource {}", resourceName);
-          
-          parses.add(parseBuilder.buildParseForResource(resources.get(resourceName)));
+      for (ResourceEntity resource : deployment.getResources().values()) {
+        if (isBpmnResource(resource.getName())) {
+          log.debug("Processing BPMN resource {}", resource.getName());
+          ExpandedBpmnParse parse = buildParseForResource(resource);
+          result.add(parse);
         }
       }
       
-      return parses;
+      return result;
+    }
+
+    private ExpandedBpmnParse buildParseForResource(ResourceEntity resource) {
+      ByteArrayInputStream inputStream = new ByteArrayInputStream(resource.getBytes());
+      BpmnParse executedParse = createBpmnParse(resource.getName(), inputStream);
+
+      return new ExpandedBpmnParse(executedParse, resource);
+    }
+
+    private BpmnParse createBpmnParse(String resourceName, ByteArrayInputStream inputStream) {
+      BpmnParse bpmnParse = bpmnParser.createParse()
+          .sourceInputStream(inputStream)
+          .setSourceSystemId(resourceName)
+          .deployment(deployment)
+          .name(resourceName);
+
+      if (deploymentSettings != null) {
+
+        // Schema validation if needed
+        if (deploymentSettings.containsKey(DeploymentSettings.IS_BPMN20_XSD_VALIDATION_ENABLED)) {
+          bpmnParse.setValidateSchema((Boolean) deploymentSettings.get(DeploymentSettings.IS_BPMN20_XSD_VALIDATION_ENABLED));
+        }
+
+        // Process validation if needed
+        if (deploymentSettings.containsKey(DeploymentSettings.IS_PROCESS_VALIDATION_ENABLED)) {
+          bpmnParse.setValidateProcess((Boolean) deploymentSettings.get(DeploymentSettings.IS_PROCESS_VALIDATION_ENABLED));
+        }
+
+      } else {
+        // On redeploy, we assume it is validated at the first
+        // deploy
+        bpmnParse.setValidateSchema(false);
+        bpmnParse.setValidateProcess(false);
+      }
+      bpmnParse.execute();
+      return bpmnParse;
     }
   }
   
@@ -129,9 +168,7 @@ public class ExpandedDeployment {
     }
     
     public Builder getBuilderForDeploymentAndSettings(DeploymentEntity deployment, Map<String, Object> deploymentSettings) {
-      ExpandedBpmnParse.Builder bpmnParseBuilder = new ExpandedBpmnParse.Builder(deployment, bpmnParser, deploymentSettings);
-      
-      return new Builder(deployment, bpmnParseBuilder);
+      return new Builder(deployment, bpmnParser, deploymentSettings);
     }
   }
     
