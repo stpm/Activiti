@@ -1,3 +1,15 @@
+/* Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ * 
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ * 
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
 package org.activiti.engine.impl.bpmn.deployer;
 
 import org.activiti.bpmn.model.BpmnModel;
@@ -19,11 +31,10 @@ import java.util.Map;
 
 /**
  * An intermediate representation of a DeploymentEntity which keeps track of all of the entity's
- * ProcessDefinitionEntities and the resources and BPMN parses, models, and processes associated
+ * ProcessDefinitionEntities and resources, and BPMN parses, models, and processes associated
  * with each ProcessDefinitionEntity.  The ProcessDefinitionEntities are expected to be
  * "not fully set-up" - they may be inconsistent with the DeploymentEntity and/or the persisted
- * versions, and if the deployment is new, they will not yet be persisted.  BpmnDeployer takes
- * care of setting them up fully. 
+ * versions, and if the deployment is new, they will not yet be persisted.
  */
 public class ExpandedDeployment {
   private static final Logger log = LoggerFactory.getLogger(BpmnDeployer.class);

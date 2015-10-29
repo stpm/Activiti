@@ -32,6 +32,11 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
 
+/**
+ * Methods for working with deployments.  Much of the actual work of {@link BpmnDeployer} is
+ * done by orchestrating the different pieces of work this class does; by having them here,
+ * we allow other deployers to make use of them.   
+ */
 public class BpmnDeploymentUtilities  {
   protected TimerManager timerManager;
   protected EventSubscriptionManager eventSubscriptionManager;
