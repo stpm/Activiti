@@ -32,7 +32,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
 
-public class BpmnDeploymentUtilities extends EntityAndConfigurationUser {
+public class BpmnDeploymentUtilities  {
   protected TimerManager timerManager;
   protected EventSubscriptionManager eventSubscriptionManager;
   
@@ -96,7 +96,7 @@ public class BpmnDeploymentUtilities extends EntityAndConfigurationUser {
   public ProcessDefinitionEntity getMostRecentVersionOfProcessDefinition(ProcessDefinitionEntity processDefinition) {
     String key = processDefinition.getKey();
     String tenantId = processDefinition.getTenantId();
-    ProcessDefinitionEntityManager processDefinitionManager = getProcessDefinitionEntityManager();
+    ProcessDefinitionEntityManager processDefinitionManager = Context.getCommandContext().getProcessEngineConfiguration().getProcessDefinitionEntityManager();
 
     ProcessDefinitionEntity existingDefinition = null;
 
@@ -121,7 +121,7 @@ public class BpmnDeploymentUtilities extends EntityAndConfigurationUser {
       throw new IllegalStateException("Provided process definition must have a deployment id.");
     }
 
-    ProcessDefinitionEntityManager processDefinitionManager = getProcessDefinitionEntityManager();
+    ProcessDefinitionEntityManager processDefinitionManager = Context.getCommandContext().getProcessEngineConfiguration().getProcessDefinitionEntityManager();
     ProcessDefinitionEntity persistedProcessDefinition = null;
     if (processDefinition.getTenantId() == null || ProcessEngineConfiguration.NO_TENANT_ID.equals(processDefinition.getTenantId())) {
       persistedProcessDefinition = processDefinitionManager.findProcessDefinitionByDeploymentAndKey(deploymentId, processDefinition.getKey());

@@ -2,6 +2,7 @@ package org.activiti.engine.impl.bpmn.deployer;
 
 import org.activiti.engine.ProcessEngineConfiguration;
 import org.activiti.engine.impl.bpmn.parser.BpmnParse;
+import org.activiti.engine.impl.context.Context;
 import org.activiti.engine.impl.persistence.entity.DeploymentEntity;
 import org.activiti.engine.impl.persistence.entity.ProcessDefinitionEntity;
 import org.activiti.engine.impl.persistence.entity.ResourceEntity;
@@ -13,7 +14,7 @@ import org.slf4j.LoggerFactory;
 /**
  * Creates diagrams from process definitions.
  */
-public class ProcessDefinitionDiagrammer extends EntityAndConfigurationUser {
+public class ProcessDefinitionDiagrammer {
   private static final Logger log = LoggerFactory.getLogger(ProcessDefinitionDiagrammer.class);
   /**
    * Generates a diagram resource for a ProcessDefinitionEntity and associated BpmnParse.  The
@@ -28,7 +29,7 @@ public class ProcessDefinitionDiagrammer extends EntityAndConfigurationUser {
     }
     
     ResourceEntity resource = createResourceEntity();
-    ProcessEngineConfiguration processEngineConfiguration = getProcessEngineConfiguration();
+    ProcessEngineConfiguration processEngineConfiguration = Context.getCommandContext().getProcessEngineConfiguration();
     try {
       byte[] diagramBytes = IoUtil.readInputStream(
           processEngineConfiguration.getProcessDiagramGenerator().generateDiagram(bpmnParse.getBpmnModel(), "png",
@@ -53,13 +54,13 @@ public class ProcessDefinitionDiagrammer extends EntityAndConfigurationUser {
   }
   
   protected ResourceEntity createResourceEntity() {
-    return getResourceEntityManager().create();
+    return Context.getCommandContext().getProcessEngineConfiguration().getResourceEntityManager().create();
   }
   
   public boolean shouldCreateDiagram(ProcessDefinitionEntity processDefinition,
       DeploymentEntity deployment) {
     if (deployment.isNew() && processDefinition.isGraphicalNotationDefined()
-        && getProcessEngineConfiguration().isCreateDiagramOnDeploy()) {
+        && Context.getCommandContext().getProcessEngineConfiguration().isCreateDiagramOnDeploy()) {
       return null == ResourceNameUtilities.getDiagramResourceName(processDefinition, deployment.getResources());
     }
     
