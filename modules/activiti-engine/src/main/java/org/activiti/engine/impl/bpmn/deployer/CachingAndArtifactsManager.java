@@ -40,7 +40,7 @@ public class CachingAndArtifactsManager {
    * deployment's collection of deployed artifacts and the deployment manager's cache, as well
    * as caching any ProcessDefinitionInfos.
    */
-  protected void updateCachingAndArtifacts(ExpandedDeployment expandedDeployment) {
+  public void updateCachingAndArtifacts(ExpandedDeployment expandedDeployment) {
     CommandContext commandContext = Context.getCommandContext();
     final ProcessEngineConfigurationImpl processEngineConfiguration = Context.getProcessEngineConfiguration();
     DeploymentCache<ProcessDefinitionCacheEntry> processDefinitionCache = processEngineConfiguration.getDeploymentManager().getProcessDefinitionCache();
