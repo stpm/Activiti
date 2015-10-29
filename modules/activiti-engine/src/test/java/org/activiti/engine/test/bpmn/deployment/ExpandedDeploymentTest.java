@@ -19,7 +19,7 @@ import static org.hamcrest.CoreMatchers.not;
 import static org.hamcrest.CoreMatchers.sameInstance;
 import static org.hamcrest.MatcherAssert.assertThat;
 
-import org.activiti.engine.impl.bpmn.deployer.BpmnDeployer;
+import org.activiti.engine.impl.bpmn.deployer.ResourceNameUtilities;
 import org.activiti.engine.impl.bpmn.deployer.ExpandedDeployment;
 import org.activiti.engine.impl.context.Context;
 import org.activiti.engine.impl.persistence.entity.DeploymentEntity;
@@ -40,14 +40,14 @@ public class ExpandedDeploymentTest extends PluggableActivitiTestCase {
   private static final String IDR_PROCESS_XML = aseembleXmlResourceString(
       "<process id='" + ID1_ID + "' name='Insurance Damage Report 1' />",
       "<process id='" + ID2_ID + "' name='Insurance Damager Report 2' />");
-  private static final String IDR_XML_NAME = "idr." + BpmnDeployer.BPMN_RESOURCE_SUFFIXES[0];
+  private static final String IDR_XML_NAME = "idr." + ResourceNameUtilities.BPMN_RESOURCE_SUFFIXES[0];
   
   private static final String EN1_ID = "en1";
   private static final String EN2_ID = "en2";
   private static final String EN_PROCESS_XML = aseembleXmlResourceString(
       "<process id='" + EN1_ID + "' name='Expense Note 1' />",
       "<process id='" + EN2_ID + "' name='Expense Note 2' />");
-  private static final String EN_XML_NAME = "en." + BpmnDeployer.BPMN_RESOURCE_SUFFIXES[1];
+  private static final String EN_XML_NAME = "en." + ResourceNameUtilities.BPMN_RESOURCE_SUFFIXES[1];
       
   @Override
   public void setUp() {

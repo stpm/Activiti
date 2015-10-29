@@ -1,0 +1,69 @@
+package org.activiti.engine.impl.bpmn.deployer;
+
+import org.activiti.engine.ProcessEngineConfiguration;
+import org.activiti.engine.impl.bpmn.parser.BpmnParse;
+import org.activiti.engine.impl.persistence.entity.DeploymentEntity;
+import org.activiti.engine.impl.persistence.entity.ProcessDefinitionEntity;
+import org.activiti.engine.impl.persistence.entity.ResourceEntity;
+import org.activiti.engine.impl.util.IoUtil;
+import org.apache.commons.lang.StringUtils;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+/**
+ * Creates diagrams from process definitions.
+ */
+public class ProcessDefinitionDiagrammer extends EntityAndConfigurationUser {
+  private static final Logger log = LoggerFactory.getLogger(ProcessDefinitionDiagrammer.class);
+  /**
+   * Generates a diagram resource for a ProcessDefinitionEntity and associated BpmnParse.  The
+   * returned resource has not yet been persisted, nor attached to the ProcessDefinitionEntity.
+   * This requires that the ProcessDefinitionEntity have its key and resource name already set.
+   * The caller must determine whether creating a diagram for this process definition is appropriate
+   * or not.
+   */
+  public ResourceEntity createDiagramForProcessDefinition(ProcessDefinitionEntity processDefinition, BpmnParse bpmnParse) {
+    if (StringUtils.isEmpty(processDefinition.getKey()) || StringUtils.isEmpty(processDefinition.getResourceName())) {
+      throw new IllegalStateException("Provided process definition must have both key and resource name set.");
+    }
+    
+    ResourceEntity resource = createResourceEntity();
+    ProcessEngineConfiguration processEngineConfiguration = getProcessEngineConfiguration();
+    try {
+      byte[] diagramBytes = IoUtil.readInputStream(
+          processEngineConfiguration.getProcessDiagramGenerator().generateDiagram(bpmnParse.getBpmnModel(), "png",
+              processEngineConfiguration.getActivityFontName(),
+              processEngineConfiguration.getLabelFontName(),
+              processEngineConfiguration.getClassLoader()), null);
+        String diagramResourceName = ResourceNameUtilities.getProcessImageResourceName(
+            processDefinition.getResourceName(), processDefinition.getKey(), "png");
+        
+        resource.setName(diagramResourceName);
+        resource.setBytes(diagramBytes);
+        resource.setDeploymentId(processDefinition.getDeploymentId());
+
+        // Mark the resource as 'generated'
+        resource.setGenerated(true);
+    } catch (Throwable t) { // if anything goes wrong, we don't store the image (the process will still be executable).
+      log.warn("Error while generating process diagram, image will not be stored in repository", t);
+      resource = null;
+    }
+    
+    return resource;
+  }
+  
+  protected ResourceEntity createResourceEntity() {
+    return getResourceEntityManager().create();
+  }
+  
+  public boolean shouldCreateDiagram(ProcessDefinitionEntity processDefinition,
+      DeploymentEntity deployment) {
+    if (deployment.isNew() && processDefinition.isGraphicalNotationDefined()
+        && getProcessEngineConfiguration().isCreateDiagramOnDeploy()) {
+      return null == ResourceNameUtilities.getDiagramResourceName(processDefinition, deployment.getResources());
+    }
+    
+    return false;
+  }
+}
+

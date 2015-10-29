@@ -158,7 +158,7 @@ public class ExpandedDeployment {
   }
     
   private static boolean isBpmnResource(String resourceName) {
-    for (String suffix : BpmnDeployer.BPMN_RESOURCE_SUFFIXES) {
+    for (String suffix : ResourceNameUtilities.BPMN_RESOURCE_SUFFIXES) {
       if (resourceName.endsWith(suffix)) {
         return true;
       }
