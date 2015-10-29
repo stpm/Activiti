@@ -68,7 +68,7 @@ public class ResourceNameUtilities {
     String key = processDefinition.getKey();
     
     for (String diagramSuffix : DIAGRAM_SUFFIXES) {
-      String possibleName = bpmnResourceBase + key + diagramSuffix;
+      String possibleName = bpmnResourceBase + key + "." + diagramSuffix;
       if (resources.containsKey(possibleName)) {
         return possibleName;
       }
