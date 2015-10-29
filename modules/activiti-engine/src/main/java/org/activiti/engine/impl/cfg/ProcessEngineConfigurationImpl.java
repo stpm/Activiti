@@ -2090,12 +2090,12 @@ public abstract class ProcessEngineConfigurationImpl extends ProcessEngineConfig
   public BpmnParser getBpmnParser() {
     return bpmnParser;
   }
-  
+
   public ProcessEngineConfigurationImpl setBpmnParser(BpmnParser bpmnParser) {
     this.bpmnParser = bpmnParser;
     return this;
   }
-  
+
   public ExpandedDeployment.BuilderFactory getExpandedDeploymentBuilderFactory() {
     return expandedDeploymentBuilderFactory;
   }
@@ -2105,6 +2105,45 @@ public abstract class ProcessEngineConfigurationImpl extends ProcessEngineConfig
     return this;
   }
 
+  public TimerManager getTimerManager() {
+    return timerManager;
+  }
+
+  public void setTimerManager(TimerManager timerManager) {
+    this.timerManager = timerManager;
+  }
+
+  public EventSubscriptionManager getEventSubscriptionManager() {
+    return eventSubscriptionManager;
+  }
+
+  public void setEventSubscriptionManager(EventSubscriptionManager eventSubscriptionManager) {
+    this.eventSubscriptionManager = eventSubscriptionManager;
+  }
+
+  public BpmnDeploymentUtilities getBpmnDeploymentUtilities() {
+    return bpmnDeploymentUtilities;
+  }
+
+  public void setBpmnDeploymentUtilities(BpmnDeploymentUtilities bpmnDeploymentUtilities) {
+    this.bpmnDeploymentUtilities = bpmnDeploymentUtilities;
+  }
+
+  public CachingAndArtifactsManager getCachingAndArtifactsManager() {
+    return cachingAndArtifactsManager;
+  }
+
+  public void setCachingAndArtifactsManager(CachingAndArtifactsManager cachingAndArtifactsManager) {
+    this.cachingAndArtifactsManager = cachingAndArtifactsManager;
+  }
+
+  public ProcessDefinitionDiagrammer getProcessDefinitionDiagrammer() {
+    return processDefinitionDiagrammer;
+  }
+
+  public void setProcessDefinitionDiagrammer(ProcessDefinitionDiagrammer processDefinitionDiagrammer) {
+    this.processDefinitionDiagrammer = processDefinitionDiagrammer;
+  }
 
   public List<Deployer> getDeployers() {
     return deployers;
